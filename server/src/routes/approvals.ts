@@ -144,7 +144,20 @@ export function approvalRoutes(db: Db) {
           : typeof (action as any).kind === "string"
             ? (action as any).kind
             : "http_request";
-      if (kind !== "http_request" && kind !== "http" && kind !== "webhook") {
+
+      if (kind === "executor_call") {
+        const exec = await actionExecutions.executeExecutorCall({
+          companyId: approval.companyId,
+          approvalId: approval.id,
+          action,
+        });
+        executionResult = {
+          executionId: exec.executionId,
+          status: exec.status,
+          result: exec.resultJson ?? null,
+          error: exec.error ?? null,
+        };
+      } else if (kind !== "http_request" && kind !== "http" && kind !== "webhook") {
         executionResult = { status: "failed", error: `Unsupported action type: ${kind}` };
       } else {
         const exec = await actionExecutions.executeHttpAction({
