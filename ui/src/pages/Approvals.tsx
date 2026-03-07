@@ -42,8 +42,13 @@ export function Approvals() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) => approvalsApi.approve(id),
-    onSuccess: (_approval, id) => {
+    mutationFn: (arg: string | { id: string; decision?: string }) => {
+      const id = typeof arg === "string" ? arg : arg.id;
+      const decisionNote = typeof arg === "string" ? undefined : arg.decision;
+      return approvalsApi.approve(id, decisionNote);
+    },
+    onSuccess: (_approval, arg) => {
+      const id = typeof arg === "string" ? arg : arg.id;
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
       navigate(`/approvals/${id}?resolved=approved`);
@@ -120,6 +125,7 @@ export function Approvals() {
               approval={approval}
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
+              onApproveOption={(decision) => approveMutation.mutate({ id: approval.id, decision })}
               onReject={() => rejectMutation.mutate(approval.id)}
               detailLink={`/approvals/${approval.id}`}
               isPending={approveMutation.isPending || rejectMutation.isPending}

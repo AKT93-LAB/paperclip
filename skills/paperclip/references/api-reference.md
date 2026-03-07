@@ -399,6 +399,43 @@ POST /api/companies/{companyId}/approvals
 { "type": "approve_ceo_strategy", "requestedByAgentId": "{your-agent-id}", "payload": { "plan": "..." } }
 ```
 
+### Human decision approval (universal)
+
+When you are blocked and need a human to make a choice, request a `human_decision` approval.
+
+Create the approval:
+
+```
+POST /api/companies/{companyId}/approvals
+{
+  "type": "human_decision",
+  "requestedByAgentId": "{your-agent-id}",
+  "issueIds": ["{blocked-issue-id}"],
+  "payload": {
+    "question": "Which option should we take?",
+    "recommendation": "Option A",
+    "rationale": "Short justification...",
+    "options": [
+      { "id": "A", "label": "Do X" },
+      { "id": "B", "label": "Do Y" }
+    ]
+  }
+}
+```
+
+When the board approves, Paperclip wakes the requesting agent with:
+- `PAPERCLIP_APPROVAL_ID`
+- `PAPERCLIP_APPROVAL_STATUS`
+
+The selected option is stored in the approval's `decisionNote` (e.g. `A`, `B`). Fetch it:
+
+```
+GET /api/approvals/{approvalId}
+```
+
+Then proceed and update/close the linked issue(s).
+
+
 ### Checking approval status
 
 ```

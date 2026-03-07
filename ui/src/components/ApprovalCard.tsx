@@ -18,6 +18,7 @@ export function ApprovalCard({
   approval,
   requesterAgent,
   onApprove,
+  onApproveOption,
   onReject,
   onOpen,
   detailLink,
@@ -26,6 +27,7 @@ export function ApprovalCard({
   approval: Approval;
   requesterAgent: Agent | null;
   onApprove: () => void;
+  onApproveOption?: (decision: string) => void;
   onReject: () => void;
   onOpen?: () => void;
   detailLink?: string;
@@ -68,21 +70,46 @@ export function ApprovalCard({
 
       {/* Actions */}
       {(approval.status === "pending" || approval.status === "revision_requested") && (
-        <div className="flex gap-2 mt-4 pt-3 border-t border-border">
-          <Button
-            size="sm"
-            className="bg-green-700 hover:bg-green-600 text-white"
-            onClick={onApprove}
-            disabled={isPending}
-          >
-            Approve
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={onReject}
-            disabled={isPending}
-          >
+        <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-border">
+          {approval.type === "human_decision" && onApproveOption && Array.isArray((approval.payload as any)?.options)
+            ? (((approval.payload as any).options as any[]) ?? [])
+                .map((opt) => {
+                  if (!opt) return null;
+                  if (typeof opt === "string") return { id: opt, label: opt };
+                  if (typeof opt === "object") {
+                    const id = String((opt as any).id ?? (opt as any).value ?? (opt as any).key ?? "").trim();
+                    if (!id) return null;
+                    const label = String((opt as any).label ?? (opt as any).name ?? (opt as any).title ?? id);
+                    return { id, label };
+                  }
+                  return null;
+                })
+                .filter(Boolean)
+                .slice(0, 4)
+                .map((opt: any) => (
+                  <Button
+                    key={opt.id}
+                    size="sm"
+                    className="bg-green-700 hover:bg-green-600 text-white"
+                    onClick={() => onApproveOption(opt.id)}
+                    disabled={isPending}
+                    title={`Approve: ${opt.label}`}
+                  >
+                    Approve {opt.id}
+                  </Button>
+                ))
+            : (
+              <Button
+                size="sm"
+                className="bg-green-700 hover:bg-green-600 text-white"
+                onClick={onApprove}
+                disabled={isPending}
+              >
+                Approve
+              </Button>
+            )}
+
+          <Button variant="destructive" size="sm" onClick={onReject} disabled={isPending}>
             Reject
           </Button>
         </div>

@@ -85,7 +85,7 @@ export function ApprovalDetail() {
   };
 
   const approveMutation = useMutation({
-    mutationFn: () => approvalsApi.approve(approvalId!),
+    mutationFn: (decisionNote?: string) => approvalsApi.approve(approvalId!, decisionNote),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -262,22 +262,70 @@ export function ApprovalDetail() {
         <div className="flex flex-wrap items-center gap-2">
           {isActionable && (
             <>
-              <Button
-                size="sm"
-                className="bg-green-700 hover:bg-green-600 text-white"
-                onClick={() => approveMutation.mutate()}
-                disabled={approveMutation.isPending}
-              >
-                Approve
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => rejectMutation.mutate()}
-                disabled={rejectMutation.isPending}
-              >
-                Reject
-              </Button>
+              {approval.type === "human_decision" && (
+                <>
+                  {(() => {
+                    const raw = (approval.payload as any)?.options;
+                    if (!Array.isArray(raw)) return null;
+                    const options = raw
+                      .map((opt: any) => {
+                        if (!opt) return null;
+                        if (typeof opt === "string") return { id: opt, label: opt };
+                        if (typeof opt === "object") {
+                          const id = String(opt.id ?? opt.value ?? opt.key ?? "").trim();
+                          if (!id) return null;
+                          const label = String(opt.label ?? opt.name ?? opt.title ?? id);
+                          return { id, label };
+                        }
+                        return null;
+                      })
+                      .filter(Boolean)
+                      .slice(0, 6) as Array<{ id: string; label: string }>;
+                    if (options.length === 0) return null;
+                    return options.map((opt) => (
+                      <Button
+                        key={opt.id}
+                        size="sm"
+                        className="bg-green-700 hover:bg-green-600 text-white"
+                        onClick={() => approveMutation.mutate(opt.id)}
+                        disabled={approveMutation.isPending}
+                        title={`Approve: ${opt.label}`}
+                      >
+                        Approve {opt.id}
+                      </Button>
+                    ));
+                  })()}
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => rejectMutation.mutate()}
+                    disabled={rejectMutation.isPending}
+                  >
+                    Reject
+                  </Button>
+                </>
+              )}
+
+              {approval.type !== "human_decision" && (
+                <>
+                  <Button
+                    size="sm"
+                    className="bg-green-700 hover:bg-green-600 text-white"
+                    onClick={() => approveMutation.mutate(undefined)}
+                    disabled={approveMutation.isPending}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => rejectMutation.mutate()}
+                    disabled={rejectMutation.isPending}
+                  >
+                    Reject
+                  </Button>
+                </>
+              )}
             </>
           )}
           {approval.status === "pending" && (

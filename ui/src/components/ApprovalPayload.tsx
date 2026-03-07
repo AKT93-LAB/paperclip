@@ -1,13 +1,15 @@
-import { UserPlus, Lightbulb, ShieldCheck } from "lucide-react";
+import { UserPlus, Lightbulb, ShieldCheck, HelpCircle } from "lucide-react";
 
 export const typeLabel: Record<string, string> = {
   hire_agent: "Hire Agent",
   approve_ceo_strategy: "CEO Strategy",
+  human_decision: "Decision",
 };
 
 export const typeIcon: Record<string, typeof UserPlus> = {
   hire_agent: UserPlus,
   approve_ceo_strategy: Lightbulb,
+  human_decision: HelpCircle,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -69,7 +71,80 @@ export function CeoStrategyPayload({ payload }: { payload: Record<string, unknow
   );
 }
 
+function getString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
+}
+
+function getOptions(payload: Record<string, unknown>): Array<{ id: string; label: string }> {
+  const raw = payload.options;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((opt) => {
+      if (opt && typeof opt === "object") {
+        const o = opt as Record<string, unknown>;
+        const id = getString(o.id || o.value || o.key);
+        const label = getString(o.label || o.name || o.title || id);
+        if (!id) return null;
+        return { id, label };
+      }
+      const id = getString(opt);
+      return id ? { id, label: id } : null;
+    })
+    .filter((v): v is { id: string; label: string } => Boolean(v));
+}
+
+export function HumanDecisionPayload({ payload }: { payload: Record<string, unknown> }) {
+  const question = getString(payload.question || payload.prompt || payload.title);
+  const recommendation = getString(payload.recommendation || payload.proposal || payload.recommended);
+  const rationale = getString(payload.rationale || payload.reasoning);
+  const options = getOptions(payload);
+  return (
+    <div className="mt-3 space-y-2 text-sm">
+      {question && (
+        <div className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground whitespace-pre-wrap">
+          {question}
+        </div>
+      )}
+      {recommendation && (
+        <div>
+          <div className="text-xs text-muted-foreground">Recommendation</div>
+          <div className="mt-1 rounded-md bg-muted/40 px-3 py-2 whitespace-pre-wrap">{recommendation}</div>
+        </div>
+      )}
+      {rationale && (
+        <div>
+          <div className="text-xs text-muted-foreground">Rationale</div>
+          <div className="mt-1 rounded-md bg-muted/40 px-3 py-2 text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
+            {rationale}
+          </div>
+        </div>
+      )}
+      {options.length > 0 && (
+        <div>
+          <div className="text-xs text-muted-foreground">Options</div>
+          <div className="mt-1 space-y-1">
+            {options.map((opt) => (
+              <div key={opt.id} className="text-muted-foreground">
+                <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded mr-2">{opt.id}</span>
+                {opt.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {!question && !recommendation && options.length === 0 && (
+        <pre className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground overflow-x-auto max-h-48">
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({ type, payload }: { type: string; payload: Record<string, unknown> }) {
   if (type === "hire_agent") return <HireAgentPayload payload={payload} />;
+  if (type === "human_decision") return <HumanDecisionPayload payload={payload} />;
   return <CeoStrategyPayload payload={payload} />;
 }
