@@ -40,7 +40,12 @@ export function approvalService(db: Db) {
         .returning()
         .then((rows) => rows[0]),
 
-    approve: async (id: string, decidedByUserId: string, decisionNote?: string | null) => {
+    approve: async (
+      id: string,
+      decidedByUserId: string,
+      decision: Record<string, unknown> | null | undefined,
+      decisionNote?: string | null,
+    ) => {
       const existing = await getExistingApproval(id);
       if (!canResolveStatuses.has(existing.status)) {
         throw unprocessable("Only pending or revision requested approvals can be approved");
@@ -52,6 +57,7 @@ export function approvalService(db: Db) {
         .set({
           status: "approved",
           decidedByUserId,
+          decisionJson: decision ?? null,
           decisionNote: decisionNote ?? null,
           decidedAt: now,
           updatedAt: now,

@@ -10,7 +10,15 @@ export const createApprovalSchema = z.object({
 
 export type CreateApproval = z.infer<typeof createApprovalSchema>;
 
+export const approvalDecisionSchema = z
+  .object({
+    optionId: z.string().min(1).optional(),
+    fields: z.record(z.unknown()).optional(),
+  })
+  .passthrough();
+
 export const resolveApprovalSchema = z.object({
+  decision: approvalDecisionSchema.optional().nullable(),
   decisionNote: z.string().optional().nullable(),
   decidedByUserId: z.string().optional().default("board"),
 });

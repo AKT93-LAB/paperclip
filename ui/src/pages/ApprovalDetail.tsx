@@ -85,7 +85,8 @@ export function ApprovalDetail() {
   };
 
   const approveMutation = useMutation({
-    mutationFn: (decisionNote?: string) => approvalsApi.approve(approvalId!, decisionNote),
+    mutationFn: (optionId?: string) =>
+      approvalsApi.approve(approvalId!, optionId ? { optionId } : null, optionId),
     onSuccess: () => {
       setError(null);
       refresh();

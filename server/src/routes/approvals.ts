@@ -121,7 +121,12 @@ export function approvalRoutes(db: Db) {
   router.post("/approvals/:id/approve", validate(resolveApprovalSchema), async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
-    const approval = await svc.approve(id, req.body.decidedByUserId ?? "board", req.body.decisionNote);
+    const approval = await svc.approve(
+      id,
+      req.body.decidedByUserId ?? "board",
+      req.body.decision,
+      req.body.decisionNote,
+    );
     const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
     const linkedIssueIds = linkedIssues.map((issue) => issue.id);
     const primaryIssueId = linkedIssueIds[0] ?? null;
@@ -149,6 +154,8 @@ export function approvalRoutes(db: Db) {
           payload: {
             approvalId: approval.id,
             approvalStatus: approval.status,
+            decisionJson: (approval as any).decisionJson ?? null,
+            decisionNote: approval.decisionNote ?? null,
             issueId: primaryIssueId,
             issueIds: linkedIssueIds,
           },
@@ -238,6 +245,8 @@ export function approvalRoutes(db: Db) {
           payload: {
             approvalId: approval.id,
             approvalStatus: approval.status,
+            decisionJson: (approval as any).decisionJson ?? null,
+            decisionNote: approval.decisionNote ?? null,
             issueId: primaryIssueId,
             issueIds: linkedIssueIds,
           },

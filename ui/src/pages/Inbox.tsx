@@ -451,7 +451,7 @@ export function Inbox() {
     mutationFn: (arg: string | { id: string; decision?: string }) => {
       const id = typeof arg === "string" ? arg : arg.id;
       const decisionNote = typeof arg === "string" ? undefined : arg.decision;
-      return approvalsApi.approve(id, decisionNote);
+      return approvalsApi.approve(id, decisionNote ? { optionId: decisionNote } : null, decisionNote);
     },
     onSuccess: (_approval, arg) => {
       const id = typeof arg === "string" ? arg : arg.id;
