@@ -29,6 +29,7 @@ export { costEvents } from "./cost_events.js";
 export { approvals } from "./approvals.js";
 export { approvalComments } from "./approval_comments.js";
 export { approvalExecutions } from "./approval_executions.js";
+export { issueProgressEvents } from "./issue_progress_events.js";
 export { activityLog } from "./activity_log.js";
 export { companySecrets } from "./company_secrets.js";
 export { companySecretVersions } from "./company_secret_versions.js";

@@ -1011,12 +1011,18 @@ export function issueService(db: Db) {
         .returning()
         .then((rows) => rows[0] ?? null),
 
-    listComments: (issueId: string) =>
-      db
+    listComments: (issueId: string, opts?: { limit?: number | null }) => {
+      const limit = typeof opts?.limit === "number" && Number.isFinite(opts.limit) ? Math.trunc(opts.limit) : null;
+      const query = db
         .select()
         .from(issueComments)
         .where(eq(issueComments.issueId, issueId))
-        .orderBy(desc(issueComments.createdAt)),
+        .orderBy(desc(issueComments.createdAt));
+      if (limit && limit > 0) {
+        return query.limit(limit);
+      }
+      return query;
+    },
 
     getComment: (commentId: string) =>
       db

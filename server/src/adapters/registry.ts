@@ -78,7 +78,9 @@ const openclawAdapter: ServerAdapterModule = {
   testEnvironment: openclawTestEnvironment,
   onHireApproved: openclawOnHireApproved,
   models: openclawModels,
-  supportsLocalAgentJwt: false,
+  // We run OpenClaw inside the same trusted environment as Paperclip (local Docker network),
+  // so we can safely inject a short-lived local agent JWT for Paperclip API auth.
+  supportsLocalAgentJwt: true,
   agentConfigurationDoc: openclawAgentConfigurationDoc,
 };
 

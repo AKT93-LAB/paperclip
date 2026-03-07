@@ -313,6 +313,20 @@ function truncateDisplayId(value: string | null | undefined, max = 128) {
   return value.length > max ? value.slice(0, max) : value;
 }
 
+function readUsageInputTokens(usageJson: unknown): number | null {
+  if (typeof usageJson !== "object" || usageJson === null || Array.isArray(usageJson)) return null;
+  const rec = usageJson as Record<string, unknown>;
+  const candidates = [rec.inputTokens, rec.input_tokens, rec.input];
+  for (const raw of candidates) {
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
 function normalizeAgentNameKey(value: string | null | undefined) {
   if (typeof value !== "string") return null;
   const normalized = value.trim().toLowerCase();
@@ -1089,7 +1103,30 @@ export function heartbeatService(db: Db) {
       : null;
     const resetTaskSession = shouldResetTaskSessionForWake(context);
     const sessionResetReason = describeSessionResetReason(context);
-    const taskSessionForRun = resetTaskSession ? null : taskSession;
+
+    const sessionResumeWarnings: string[] = [];
+    let clearTaskSessionForTokenBurn = false;
+
+    // Guardrail: Codex local sessions can silently bloat to multi-million-token context when
+    // agents repeatedly read large files + long comment threads. Even when cached, it can
+    // still burn through subscription limits. If the previous run was huge, drop the saved
+    // session and start fresh.
+    if (taskKey && taskSession && agent.adapterType === "codex_local" && taskSession.lastRunId) {
+      const lastRun = await getRun(taskSession.lastRunId);
+      const lastInputTokens = readUsageInputTokens(lastRun?.usageJson);
+      if (lastInputTokens && lastInputTokens > 250_000) {
+        clearTaskSessionForTokenBurn = true;
+        await clearTaskSessions(agent.companyId, agent.id, {
+          taskKey,
+          adapterType: agent.adapterType,
+        });
+        sessionResumeWarnings.push(
+          `Skipping saved session resume for task "${taskKey}" because the previous run used ${lastInputTokens.toLocaleString()} input tokens (session too large).`,
+        );
+      }
+    }
+
+    const taskSessionForRun = resetTaskSession || clearTaskSessionForTokenBurn ? null : taskSession;
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSessionForRun?.sessionParamsJson ?? null),
     );
@@ -1107,6 +1144,7 @@ export function heartbeatService(db: Db) {
     const runtimeSessionParams = runtimeSessionResolution.sessionParams;
     const runtimeWorkspaceWarnings = [
       ...resolvedWorkspace.warnings,
+      ...sessionResumeWarnings,
       ...(runtimeSessionResolution.warning ? [runtimeSessionResolution.warning] : []),
       ...(resetTaskSession && sessionResetReason
         ? [

@@ -94,6 +94,10 @@ function buildWakeText(payload: WakePayload, paperclipEnv: Record<string, string
     "PAPERCLIP_AGENT_ID",
     "PAPERCLIP_COMPANY_ID",
     "PAPERCLIP_API_URL",
+    // For local-trusted deployments, Paperclip can inject a short-lived run JWT.
+    // We include it in the wake text so OpenClaw-based agents can authenticate back to Paperclip.
+    // Treat it as sensitive; agents should never paste it into issue comments.
+    "PAPERCLIP_API_KEY",
     "PAPERCLIP_TASK_ID",
     "PAPERCLIP_WAKE_REASON",
     "PAPERCLIP_WAKE_COMMENT_ID",
@@ -543,6 +547,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ...buildPaperclipEnv(agent),
     PAPERCLIP_RUN_ID: runId,
   };
+  // In trusted/local deployments we can pass a short-lived JWT to authenticate Paperclip API calls.
+  // This is required for non-local adapters (OpenClaw) when Paperclip runs in authenticated mode.
+  if (typeof ctx.authToken === "string" && ctx.authToken.trim().length > 0) {
+    paperclipEnv.PAPERCLIP_API_KEY = ctx.authToken.trim();
+  }
   if (paperclipApiUrlOverride) {
     paperclipEnv.PAPERCLIP_API_URL = paperclipApiUrlOverride;
   }
