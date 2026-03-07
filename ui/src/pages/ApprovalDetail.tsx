@@ -95,7 +95,7 @@ export function ApprovalDetail() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: () => approvalsApi.reject(approvalId!),
+    mutationFn: (decisionNote?: string) => approvalsApi.reject(approvalId!, decisionNote),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -104,7 +104,7 @@ export function ApprovalDetail() {
   });
 
   const revisionMutation = useMutation({
-    mutationFn: () => approvalsApi.requestRevision(approvalId!),
+    mutationFn: (decisionNote?: string) => approvalsApi.requestRevision(approvalId!, decisionNote),
     onSuccess: () => {
       setError(null);
       refresh();
@@ -298,7 +298,11 @@ export function ApprovalDetail() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => rejectMutation.mutate()}
+                    onClick={() => {
+                      const note = window.prompt("Why reject? (required)");
+                      if (!note || note.trim().length < 3) return;
+                      rejectMutation.mutate(note);
+                    }}
                     disabled={rejectMutation.isPending}
                   >
                     Reject
@@ -319,7 +323,7 @@ export function ApprovalDetail() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => rejectMutation.mutate()}
+                    onClick={() => rejectMutation.mutate(undefined)}
                     disabled={rejectMutation.isPending}
                   >
                     Reject
@@ -332,7 +336,15 @@ export function ApprovalDetail() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => revisionMutation.mutate()}
+              onClick={() => {
+                if (approval.type === "human_decision") {
+                  const note = window.prompt("What should the agent change? (required)");
+                  if (!note || note.trim().length < 3) return;
+                  revisionMutation.mutate(note);
+                  return;
+                }
+                revisionMutation.mutate(undefined);
+              }}
               disabled={revisionMutation.isPending}
             >
               Request revision

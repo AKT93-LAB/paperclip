@@ -28,7 +28,7 @@ export function ApprovalCard({
   requesterAgent: Agent | null;
   onApprove: () => void;
   onApproveOption?: (decision: string) => void;
-  onReject: () => void;
+  onReject: (decisionNote?: string) => void;
   onOpen?: () => void;
   detailLink?: string;
   isPending: boolean;
@@ -109,7 +109,20 @@ export function ApprovalCard({
               </Button>
             )}
 
-          <Button variant="destructive" size="sm" onClick={onReject} disabled={isPending}>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => {
+              if (approval.type === "human_decision") {
+                const note = window.prompt("Why reject? (required)");
+                if (!note || note.trim().length < 3) return;
+                onReject(note);
+                return;
+              }
+              onReject();
+            }}
+            disabled={isPending}
+          >
             Reject
           </Button>
         </div>

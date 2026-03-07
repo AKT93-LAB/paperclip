@@ -111,6 +111,9 @@ export function approvalService(db: Db) {
       if (!canResolveStatuses.has(existing.status)) {
         throw unprocessable("Only pending or revision requested approvals can be rejected");
       }
+      if (existing.type === "human_decision" && (!decisionNote || decisionNote.trim().length < 3)) {
+        throw unprocessable("Rejection requires a short reason for human_decision approvals");
+      }
 
       const now = new Date();
       const updated = await db
@@ -141,6 +144,9 @@ export function approvalService(db: Db) {
       const existing = await getExistingApproval(id);
       if (existing.status !== "pending") {
         throw unprocessable("Only pending approvals can request revision");
+      }
+      if (existing.type === "human_decision" && (!decisionNote || decisionNote.trim().length < 3)) {
+        throw unprocessable("Request revision requires a short note for human_decision approvals");
       }
 
       const now = new Date();
