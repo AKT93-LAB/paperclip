@@ -18,6 +18,7 @@ import {
   goalService,
   heartbeatService,
   issueApprovalService,
+  issueProgressService,
   issueService,
   logActivity,
   projectService,
@@ -39,6 +40,7 @@ const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
   const svc = issueService(db);
+  const progress = issueProgressService(db);
   const access = accessService(db);
   const heartbeat = heartbeatService(db);
   const agentsSvc = agentService(db);
@@ -522,6 +524,22 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     const actor = getActorInfo(req);
+
+    // Progress signal: issue updated
+    await progress.record({
+      companyId: issue.companyId,
+      issueId: issue.id,
+      eventType: "issue_updated",
+      actor:
+        actor.actorType === "agent" && actor.agentId
+          ? { actorType: "agent", actorAgentId: actor.agentId, runId: actor.runId }
+          : { actorType: "user", actorUserId: actor.actorId, runId: actor.runId },
+      metadata: {
+        updateFields,
+        previous,
+      },
+    });
+
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: actor.actorType,
@@ -539,6 +557,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
       comment = await svc.addComment(id, commentBody, {
         agentId: actor.agentId ?? undefined,
         userId: actor.actorType === "user" ? actor.actorId : undefined,
+      });
+
+      // Progress signal: comment added (patch route)
+      await progress.record({
+        companyId: issue.companyId,
+        issueId: issue.id,
+        eventType: "comment_added",
+        actor:
+          actor.actorType === "agent" && actor.agentId
+            ? { actorType: "agent", actorAgentId: actor.agentId, runId: actor.runId }
+            : { actorType: "user", actorUserId: actor.actorId, runId: actor.runId },
+        metadata: { commentId: comment.id },
       });
 
       await logActivity(db, {
@@ -885,6 +915,22 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const comment = await svc.addComment(id, req.body.body, {
       agentId: actor.agentId ?? undefined,
       userId: actor.actorType === "user" ? actor.actorId : undefined,
+    });
+
+    // Progress signal: comment added
+    await progress.record({
+      companyId: currentIssue.companyId,
+      issueId: currentIssue.id,
+      eventType: "comment_added",
+      actor:
+        actor.actorType === "agent" && actor.agentId
+          ? { actorType: "agent", actorAgentId: actor.agentId, runId: actor.runId }
+          : { actorType: "user", actorUserId: actor.actorId, runId: actor.runId },
+      metadata: {
+        commentId: comment.id,
+        reopened,
+        interruptedRunId: interruptedRunId ?? null,
+      },
     });
 
     await logActivity(db, {

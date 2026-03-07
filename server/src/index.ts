@@ -484,6 +484,10 @@ setupLiveEventsWebSocketServer(server, db as any, {
   resolveSessionFromHeaders,
 });
 
+// Enterprise: detect and unstick stalled in-progress issues
+const { startStuckDetector } = await import("./services/stuck-detector.js");
+startStuckDetector(db as any);
+
 if (config.heartbeatSchedulerEnabled) {
   const heartbeat = heartbeatService(db as any);
 

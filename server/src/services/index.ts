@@ -3,6 +3,7 @@ export { agentService } from "./agents.js";
 export { assetService } from "./assets.js";
 export { projectService } from "./projects.js";
 export { issueService, type IssueFilters } from "./issues.js";
+export { issueProgressService } from "./issue-progress.js";
 export { issueApprovalService } from "./issue-approvals.js";
 export { goalService } from "./goals.js";
 export { activityService, type ActivityFilters } from "./activity.js";
