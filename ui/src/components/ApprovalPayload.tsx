@@ -4,12 +4,14 @@ export const typeLabel: Record<string, string> = {
   hire_agent: "Hire Agent",
   approve_ceo_strategy: "CEO Strategy",
   human_decision: "Decision",
+  action_execution: "Action",
 };
 
 export const typeIcon: Record<string, typeof UserPlus> = {
   hire_agent: UserPlus,
   approve_ceo_strategy: Lightbulb,
   human_decision: HelpCircle,
+  action_execution: ShieldCheck,
 };
 
 export const defaultTypeIcon = ShieldCheck;
@@ -143,8 +145,60 @@ export function HumanDecisionPayload({ payload }: { payload: Record<string, unkn
   );
 }
 
+function AssetLink({ assetId, label }: { assetId: string; label?: string }) {
+  const href = `/api/assets/${assetId}/content`;
+  return (
+    <a className="underline" href={href} target="_blank" rel="noreferrer">
+      {label ?? assetId}
+    </a>
+  );
+}
+
+export function ActionExecutionPayload({ payload }: { payload: Record<string, unknown> }) {
+  const summary = getString(payload.summary || payload.title || payload.description);
+  const actionType = getString(payload.actionType || (payload.action as any)?.type || (payload.action as any)?.kind);
+  const previewAssetIds: string[] = Array.isArray(payload.previewAssetIds)
+    ? (payload.previewAssetIds as any[]).map((x) => (typeof x === "string" ? x : "")).filter(Boolean)
+    : [];
+  return (
+    <div className="mt-3 space-y-2 text-sm">
+      {summary && (
+        <div className="rounded-md bg-muted/40 px-3 py-2 text-muted-foreground whitespace-pre-wrap">
+          {summary}
+        </div>
+      )}
+      {actionType && (
+        <div className="text-xs text-muted-foreground">
+          Action type: <span className="font-mono">{actionType}</span>
+        </div>
+      )}
+      {previewAssetIds.length > 0 ? (
+        <div>
+          <div className="text-xs text-muted-foreground">Previews</div>
+          <ul className="mt-1 list-disc pl-5 space-y-1">
+            {previewAssetIds.map((id) => (
+              <li key={id} className="text-muted-foreground">
+                <AssetLink assetId={id} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground">No previews attached.</div>
+      )}
+      <details>
+        <summary className="cursor-pointer text-xs text-muted-foreground">Raw payload</summary>
+        <pre className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground overflow-x-auto max-h-48">
+          {JSON.stringify(payload, null, 2)}
+        </pre>
+      </details>
+    </div>
+  );
+}
+
 export function ApprovalPayloadRenderer({ type, payload }: { type: string; payload: Record<string, unknown> }) {
   if (type === "hire_agent") return <HireAgentPayload payload={payload} />;
   if (type === "human_decision") return <HumanDecisionPayload payload={payload} />;
+  if (type === "action_execution") return <ActionExecutionPayload payload={payload} />;
   return <CeoStrategyPayload payload={payload} />;
 }

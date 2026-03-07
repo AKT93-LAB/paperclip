@@ -756,7 +756,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    const comments = await svc.listComments(id);
+    const rawLimit = typeof req.query.limit === "string" ? req.query.limit : null;
+    const parsedLimit = rawLimit ? Number.parseInt(rawLimit, 10) : NaN;
+
+    const explicitLimit = Number.isFinite(parsedLimit)
+      ? Math.max(1, Math.min(200, parsedLimit))
+      : null;
+
+    // Token-safety: agents should not pull the full comment history by default.
+    // UI/board users can still fetch everything by omitting the limit.
+    const limit = explicitLimit ?? (req.actor.type === "agent" ? 50 : null);
+
+    const comments = await svc.listComments(id, { limit });
     res.json(comments);
   });
 
@@ -896,8 +907,20 @@ export function issueRoutes(db: Db, storage: StorageService) {
     });
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
+    // Enterprise: allow agents to post INTERNAL comments without triggering automation wakes.
+    const suppressWakeups =
+      actor.actorType === "agent" &&
+      typeof req.body.body === "string" &&
+      req.body.body.trimStart().toUpperCase().startsWith("INTERNAL:");
+
     void (async () => {
       const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
+
+      if (suppressWakeups && !reopened) {
+        // INTERNAL comments are for human visibility / logging and should not wake any agents.
+        return;
+      }
+
       const assigneeId = currentIssue.assigneeAgentId;
       if (assigneeId) {
         if (reopened) {

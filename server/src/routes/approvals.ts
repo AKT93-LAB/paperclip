@@ -11,6 +11,7 @@ import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {
   approvalService,
+  actionExecutionService,
   heartbeatService,
   issueApprovalService,
   logActivity,
@@ -32,6 +33,7 @@ export function approvalRoutes(db: Db) {
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
+  const actionExecutions = actionExecutionService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
   router.get("/companies/:companyId/approvals", async (req, res) => {
@@ -131,6 +133,34 @@ export function approvalRoutes(db: Db) {
     const linkedIssueIds = linkedIssues.map((issue) => issue.id);
     const primaryIssueId = linkedIssueIds[0] ?? null;
 
+    // Enterprise action approvals: system executes the action on approval.
+    let executionResult: Record<string, unknown> | null = null;
+    if (approval.type === "action_execution") {
+      const payload = (approval.payload ?? {}) as Record<string, unknown>;
+      const action = (payload.action ?? payload) as Record<string, unknown>;
+      const kind =
+        typeof payload.actionType === "string"
+          ? payload.actionType
+          : typeof (action as any).kind === "string"
+            ? (action as any).kind
+            : "http_request";
+      if (kind !== "http_request" && kind !== "http" && kind !== "webhook") {
+        executionResult = { status: "failed", error: `Unsupported action type: ${kind}` };
+      } else {
+        const exec = await actionExecutions.executeHttpAction({
+          companyId: approval.companyId,
+          approvalId: approval.id,
+          action,
+        });
+        executionResult = {
+          executionId: exec.executionId,
+          status: exec.status,
+          result: exec.resultJson ?? null,
+          error: exec.error ?? null,
+        };
+      }
+    }
+
     await logActivity(db, {
       companyId: approval.companyId,
       actorType: "user",
@@ -142,6 +172,7 @@ export function approvalRoutes(db: Db) {
         type: approval.type,
         requestedByAgentId: approval.requestedByAgentId,
         linkedIssueIds,
+        executionResult,
       },
     });
 
@@ -156,6 +187,7 @@ export function approvalRoutes(db: Db) {
             approvalStatus: approval.status,
             decisionJson: (approval as any).decisionJson ?? null,
             decisionNote: approval.decisionNote ?? null,
+            executionResult,
             issueId: primaryIssueId,
             issueIds: linkedIssueIds,
           },

@@ -7,6 +7,7 @@ import { assetService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const MAX_ASSET_IMAGE_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
+const MAX_ASSET_FILE_BYTES = Number(process.env.PAPERCLIP_ARTIFACT_MAX_BYTES) || 50 * 1024 * 1024;
 const ALLOWED_IMAGE_CONTENT_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -20,7 +21,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
   const svc = assetService(db);
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_ASSET_IMAGE_BYTES, files: 1 },
+    limits: { fileSize: MAX_ASSET_FILE_BYTES, files: 1 },
   });
 
   async function runSingleFileUpload(req: Request, res: Response) {
@@ -41,7 +42,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
     } catch (err) {
       if (err instanceof multer.MulterError) {
         if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(422).json({ error: `Image exceeds ${MAX_ASSET_IMAGE_BYTES} bytes` });
+          res.status(422).json({ error: `Upload exceeds ${MAX_ASSET_FILE_BYTES} bytes` });
           return;
         }
         res.status(400).json({ error: err.message });
@@ -120,6 +121,87 @@ export function assetRoutes(db: Db, storage: StorageService) {
       originalFilename: asset.originalFilename,
       createdByAgentId: asset.createdByAgentId,
       createdByUserId: asset.createdByUserId,
+      createdAt: asset.createdAt,
+      updatedAt: asset.updatedAt,
+      contentPath: `/api/assets/${asset.id}/content`,
+    });
+  });
+
+  // Generic file uploads for enterprise action approvals (email drafts, JSON payloads, videos, etc.)
+  router.post("/companies/:companyId/assets/files", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    try {
+      await runSingleFileUpload(req, res);
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          res.status(422).json({ error: `Upload exceeds ${MAX_ASSET_FILE_BYTES} bytes` });
+          return;
+        }
+        res.status(400).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+
+    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    if (!file) {
+      res.status(400).json({ error: "Missing file field 'file'" });
+      return;
+    }
+
+    const contentType = (file.mimetype || "application/octet-stream").toLowerCase();
+    if (file.buffer.length <= 0) {
+      res.status(422).json({ error: "File is empty" });
+      return;
+    }
+
+    const namespaceSuffix = typeof req.body?.namespace === "string" ? req.body.namespace : "general";
+    const actor = getActorInfo(req);
+    const stored = await storage.putFile({
+      companyId,
+      namespace: `artifacts/${namespaceSuffix}`,
+      originalFilename: file.originalname || null,
+      contentType,
+      body: file.buffer,
+    });
+
+    const asset = await svc.create(companyId, {
+      provider: stored.provider,
+      objectKey: stored.objectKey,
+      contentType: stored.contentType,
+      byteSize: stored.byteSize,
+      sha256: stored.sha256,
+      originalFilename: stored.originalFilename,
+      createdByAgentId: actor.agentId,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "artifact.created",
+      entityType: "asset",
+      entityId: asset.id,
+      details: {
+        originalFilename: asset.originalFilename,
+        contentType: asset.contentType,
+        byteSize: asset.byteSize,
+      },
+    });
+
+    res.status(201).json({
+      assetId: asset.id,
+      companyId: asset.companyId,
+      contentType: asset.contentType,
+      byteSize: asset.byteSize,
+      sha256: asset.sha256,
+      originalFilename: asset.originalFilename,
       createdAt: asset.createdAt,
       updatedAt: asset.updatedAt,
       contentPath: `/api/assets/${asset.id}/content`,
