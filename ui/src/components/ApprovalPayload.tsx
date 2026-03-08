@@ -272,13 +272,11 @@ export function ActionExecutionPayload({ payload }: { payload: Record<string, un
       {previewAssetIds.length > 0 ? (
         <div>
           <div className="text-xs text-muted-foreground">Previews</div>
-          <ul className="mt-1 list-disc pl-5 space-y-1">
+          <div className="mt-2 space-y-3">
             {previewAssetIds.map((id) => (
-              <li key={id} className="text-muted-foreground">
-                <AssetLink assetId={id} />
-              </li>
+              <AssetPreview key={id} assetId={id} />
             ))}
-          </ul>
+          </div>
         </div>
       ) : (
         <div className="text-xs text-muted-foreground">No previews attached.</div>
