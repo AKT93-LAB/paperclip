@@ -178,14 +178,17 @@ function AssetPreview({ assetId }: { assetId: string }) {
 
     (async () => {
       try {
-        const resp = await fetch(`/api/assets/${assetId}`);
-        if (!resp.ok) throw new Error(`asset meta ${resp.status}`);
-        const j = await resp.json();
+        // Use HEAD on the content endpoint to avoid needing a separate JSON metadata route.
+        const resp = await fetch(contentUrl, { method: "HEAD" });
+        if (!resp.ok) throw new Error(`asset head ${resp.status}`);
+        const ct = resp.headers.get("content-type") || undefined;
+        const len = resp.headers.get("content-length");
+        const size = len ? Number(len) : undefined;
         const m: AssetMeta = {
           id: assetId,
-          contentType: j.contentType,
-          originalFilename: j.originalFilename,
-          byteSize: j.byteSize,
+          contentType: ct,
+          originalFilename: null,
+          byteSize: Number.isFinite(size as any) ? (size as number) : undefined,
         };
         if (cancelled) return;
         setMeta(m);
