@@ -145,12 +145,109 @@ export function HumanDecisionPayload({ payload }: { payload: Record<string, unkn
   );
 }
 
+import { useEffect, useMemo, useState } from "react";
+
+type AssetMeta = {
+  id: string;
+  contentType?: string;
+  originalFilename?: string | null;
+  byteSize?: number;
+};
+
 function AssetLink({ assetId, label }: { assetId: string; label?: string }) {
   const href = `/api/assets/${assetId}/content`;
   return (
     <a className="underline" href={href} target="_blank" rel="noreferrer">
       {label ?? assetId}
     </a>
+  );
+}
+
+function AssetPreview({ assetId }: { assetId: string }) {
+  const [meta, setMeta] = useState<AssetMeta | null>(null);
+  const [textPreview, setTextPreview] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const contentUrl = useMemo(() => `/api/assets/${assetId}/content`, [assetId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMeta(null);
+    setTextPreview(null);
+    setError(null);
+
+    (async () => {
+      try {
+        const resp = await fetch(`/api/assets/${assetId}`);
+        if (!resp.ok) throw new Error(`asset meta ${resp.status}`);
+        const j = await resp.json();
+        const m: AssetMeta = {
+          id: assetId,
+          contentType: j.contentType,
+          originalFilename: j.originalFilename,
+          byteSize: j.byteSize,
+        };
+        if (cancelled) return;
+        setMeta(m);
+
+        const ct = (m.contentType || "").toLowerCase();
+        const isTextLike = ct.startsWith("text/") || ct.includes("json") || ct.includes("markdown");
+        const smallEnough = typeof m.byteSize === "number" ? m.byteSize <= 50_000 : false;
+
+        if (isTextLike && smallEnough) {
+          const t = await fetch(contentUrl).then((r) => {
+            if (!r.ok) throw new Error(`asset content ${r.status}`);
+            return r.text();
+          });
+          if (cancelled) return;
+          setTextPreview(t.slice(0, 4000));
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [assetId, contentUrl]);
+
+  const ct = (meta?.contentType || "").toLowerCase();
+
+  return (
+    <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground truncate">
+          {meta?.originalFilename || assetId}
+          {meta?.contentType ? ` • ${meta.contentType}` : ""}
+          {typeof meta?.byteSize === "number" ? ` • ${meta.byteSize} bytes` : ""}
+        </div>
+        <div className="text-xs">
+          <AssetLink assetId={assetId} label="Open" />
+        </div>
+      </div>
+
+      {error && <div className="text-xs text-red-500">Preview error: {error}</div>}
+
+      {ct.startsWith("video/") && (
+        <video className="w-full max-w-xl rounded" controls src={contentUrl} />
+      )}
+
+      {ct.startsWith("image/") && (
+        <img className="w-full max-w-xl rounded" src={contentUrl} alt={meta?.originalFilename || assetId} />
+      )}
+
+      {textPreview != null && (
+        <pre className="text-xs whitespace-pre-wrap break-words max-h-64 overflow-y-auto bg-muted/40 p-2 rounded">
+          {textPreview}
+        </pre>
+      )}
+
+      {!error && !ct.startsWith("video/") && !ct.startsWith("image/") && textPreview == null && (
+        <div className="text-xs text-muted-foreground">Preview not available (open to view).</div>
+      )}
+    </div>
   );
 }
 
