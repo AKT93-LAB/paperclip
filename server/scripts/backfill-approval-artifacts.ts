@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, approvals } from "@paperclipai/db";
-import { normalizeApprovalPayloadArtifacts } from "../server/src/services/approval-artifacts.js";
+import { normalizeApprovalPayloadArtifacts } from "../src/services/approval-artifacts.js";
 
 async function main() {
   const rows = await db.select().from(approvals);
