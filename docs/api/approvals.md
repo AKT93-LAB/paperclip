@@ -36,6 +36,50 @@ POST /api/companies/{companyId}/approvals
 }
 ```
 
+## Artifact Metadata for Approval Payloads
+
+For approvals that ask a human to review generated files, use human-facing artifact metadata in the payload.
+
+Preferred shape:
+
+```json
+{
+  "artifacts": [
+    {
+      "assetId": "673eaa46-b3ac-43cf-9933-a244e4035a91",
+      "label": "Rendered TikTok preview.mp4",
+      "kind": "video",
+      "role": "preview"
+    },
+    {
+      "assetId": "bb870245-b12f-424a-854b-5623dfd94f21",
+      "label": "Caption draft.txt",
+      "kind": "text",
+      "role": "supporting"
+    }
+  ]
+}
+```
+
+Guidelines:
+
+- `assetId` — required; Paperclip asset identifier
+- `label` — preferred human-readable name shown in approval UI
+- `kind` — optional content hint such as `video`, `image`, `text`, `json`, `audio`, `document`
+- `role` — optional semantic role such as `preview`, `primary`, `supporting`, `attachment`, `evidence`
+
+Important:
+
+- treat **filename** as a storage detail
+- treat **label** as the human-facing meaning
+- do not rely on raw UUID filenames for approval UX
+
+Backward compatibility:
+
+- `previewAssets` still works
+- `previewAssetIds` still works
+- but new producers should prefer `artifacts`
+
 ## Create Hire Request
 
 ```
