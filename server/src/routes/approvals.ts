@@ -17,13 +17,16 @@ import {
   logActivity,
   secretService,
 } from "../services/index.js";
+import { normalizeApprovalPayloadArtifacts } from "../services/approval-artifacts.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
 
-function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
+function redactApprovalPayload<T extends { type?: string; payload: Record<string, unknown> }>(approval: T): T {
+  const redacted = (redactEventPayload(approval.payload) ?? {}) as Record<string, unknown>;
+  const normalized = approval.type === "action_execution" ? normalizeApprovalPayloadArtifacts(redacted) : redacted;
   return {
     ...approval,
-    payload: redactEventPayload(approval.payload) ?? {},
+    payload: normalized,
   };
 }
 
@@ -74,50 +77,8 @@ export function approvalRoutes(db: Db) {
           )
         : approvalInput.payload;
 
-    // Universal artifact normalization:
-    // Preferred producer shape: payload.artifacts[].
-    // Legacy producer shape: payload.previewAssetIds[] + action.payload with `*AssetId` fields.
-    // Normalize legacy into artifacts so the approval UI is human-reviewable for ANY agent/project.
     if (approvalInput.type === "action_execution" && normalizedPayload && typeof normalizedPayload === "object") {
-      const payload = normalizedPayload as Record<string, unknown>;
-      const hasArtifacts = Array.isArray((payload as any).artifacts) && (payload as any).artifacts.length > 0;
-
-      if (!hasArtifacts) {
-        const previewAssetIds: string[] = Array.isArray((payload as any).previewAssetIds)
-          ? ((payload as any).previewAssetIds as any[]).filter((id) => typeof id === "string")
-          : [];
-
-        const action = (((payload as any).action ?? payload) as any) as Record<string, unknown>;
-        const actionPayload =
-          action && typeof (action as any).payload === "object" && (action as any).payload
-            ? ((action as any).payload as Record<string, unknown>)
-            : {};
-
-        // Build best-effort labels from `*AssetId` keys so artifacts can be understandable without
-        // requiring agent-specific hardcoding.
-        const labelsByAssetId = new Map<string, string>();
-        for (const [k, v] of Object.entries(actionPayload)) {
-          if (typeof v !== "string") continue;
-          if (!k.toLowerCase().endsWith("assetid")) continue;
-          const base = k.slice(0, -"AssetId".length);
-          const label = base
-            ? base
-                .replace(/[_-]+/g, " ")
-                .replace(/\b\w/g, (char) => char.toUpperCase())
-            : "Artifact";
-          labelsByAssetId.set(v, label);
-        }
-
-        if (previewAssetIds.length > 0) {
-          (payload as any).artifacts = previewAssetIds.map((assetId) => ({
-            assetId,
-            label: labelsByAssetId.get(assetId),
-            role: "supporting",
-          }));
-        }
-
-        normalizedPayload = payload;
-      }
+      normalizedPayload = normalizeApprovalPayloadArtifacts(normalizedPayload as Record<string, unknown>);
     }
 
     const actor = getActorInfo(req);
