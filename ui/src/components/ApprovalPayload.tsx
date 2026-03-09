@@ -154,16 +154,45 @@ type AssetMeta = {
   byteSize?: number;
 };
 
-function AssetLink({ assetId, label }: { assetId: string; label?: string }) {
-  const href = `/api/assets/${assetId}/content`;
-  return (
-    <a className="underline" href={href} target="_blank" rel="noreferrer">
-      {label ?? assetId}
-    </a>
-  );
+function parseFilenameFromContentDisposition(value: string | null): string | null {
+  if (!value) return null;
+  const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]).trim() || null;
+    } catch {
+      return utf8Match[1].trim() || null;
+    }
+  }
+  const basicMatch = value.match(/filename="?([^";]+)"?/i);
+  return basicMatch?.[1]?.trim() || null;
 }
 
-function AssetPreview({ assetId }: { assetId: string }) {
+function looksRandomFilename(name: string | null | undefined): boolean {
+  if (!name) return true;
+  const trimmed = name.trim();
+  if (!trimmed) return true;
+  const stem = trimmed.replace(/\.[^.]+$/, "");
+  return /^[a-f0-9-]{12,}$/i.test(stem);
+}
+
+function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number): string {
+  const preferredName = meta?.originalFilename?.trim() || "";
+  if (preferredName && !looksRandomFilename(preferredName)) return preferredName;
+
+  const ct = (meta?.contentType || "").toLowerCase();
+  const kind = ct.startsWith("video/")
+    ? "Video preview"
+    : ct.startsWith("image/")
+      ? "Image preview"
+      : ct.startsWith("text/") || ct.includes("json") || ct.includes("markdown")
+        ? "Text preview"
+        : "Attachment preview";
+
+  return typeof index === "number" ? `${kind} ${index + 1}` : `${kind} (${assetId.slice(0, 8)})`;
+}
+
+function AssetPreview({ assetId, index }: { assetId: string; index?: number }) {
   const [meta, setMeta] = useState<AssetMeta | null>(null);
   const [textPreview, setTextPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -181,13 +210,14 @@ function AssetPreview({ assetId }: { assetId: string }) {
         // Use HEAD on the content endpoint to avoid needing a separate JSON metadata route.
         const resp = await fetch(contentUrl, { method: "HEAD" });
         if (!resp.ok) throw new Error(`asset head ${resp.status}`);
-        const ct = resp.headers.get("content-type") || undefined;
+        const contentType = resp.headers.get("content-type") || undefined;
         const len = resp.headers.get("content-length");
+        const disposition = resp.headers.get("content-disposition");
         const size = len ? Number(len) : undefined;
         const m: AssetMeta = {
           id: assetId,
-          contentType: ct,
-          originalFilename: null,
+          contentType,
+          originalFilename: parseFilenameFromContentDisposition(disposition),
           byteSize: Number.isFinite(size as any) ? (size as number) : undefined,
         };
         if (cancelled) return;
@@ -217,28 +247,35 @@ function AssetPreview({ assetId }: { assetId: string }) {
   }, [assetId, contentUrl]);
 
   const ct = (meta?.contentType || "").toLowerCase();
+  const label = humanAssetLabel(meta, assetId, index);
 
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-xs text-muted-foreground truncate">
-          {meta?.originalFilename || assetId}
-          {meta?.contentType ? ` • ${meta.contentType}` : ""}
-          {typeof meta?.byteSize === "number" ? ` • ${meta.byteSize} bytes` : ""}
-        </div>
-        <div className="text-xs">
-          <AssetLink assetId={assetId} label="Open" />
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{label}</div>
+          <div className="text-xs text-muted-foreground truncate">
+            {meta?.contentType ? `${meta.contentType}` : "Unknown type"}
+            {typeof meta?.byteSize === "number" ? ` • ${meta.byteSize} bytes` : ""}
+          </div>
         </div>
       </div>
 
       {error && <div className="text-xs text-red-500">Preview error: {error}</div>}
 
       {ct.startsWith("video/") && (
-        <video className="w-full max-w-xl rounded" controls src={contentUrl} />
+        <video
+          className="w-full max-w-xl rounded"
+          controls
+          playsInline
+          preload="metadata"
+          src={contentUrl}
+          onClick={(e) => e.stopPropagation()}
+        />
       )}
 
       {ct.startsWith("image/") && (
-        <img className="w-full max-w-xl rounded" src={contentUrl} alt={meta?.originalFilename || assetId} />
+        <img className="w-full max-w-xl rounded" src={contentUrl} alt={label} />
       )}
 
       {textPreview != null && (
@@ -276,8 +313,8 @@ export function ActionExecutionPayload({ payload }: { payload: Record<string, un
         <div>
           <div className="text-xs text-muted-foreground">Previews</div>
           <div className="mt-2 space-y-3">
-            {previewAssetIds.map((id) => (
-              <AssetPreview key={id} assetId={id} />
+            {previewAssetIds.map((id, index) => (
+              <AssetPreview key={id} assetId={id} index={index} />
             ))}
           </div>
         </div>
