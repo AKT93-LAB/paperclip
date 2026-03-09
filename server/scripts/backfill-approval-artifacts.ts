@@ -3,7 +3,9 @@ import { createDb, approvals } from "@paperclipai/db";
 import { normalizeApprovalPayloadArtifacts } from "../src/services/approval-artifacts.js";
 
 async function main() {
-  const db = createDb();
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set");
+  const db = createDb(url);
   const rows = await db.select().from(approvals);
   let scanned = 0;
   let updated = 0;
