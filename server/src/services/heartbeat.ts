@@ -27,6 +27,8 @@ import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
+const HEARTBEAT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3;
+const HEARTBEAT_TIMEOUT_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER = 4;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const startLocksByAgent = new Map<string, Promise<void>>();
 const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
@@ -202,8 +204,6 @@ export function shouldResetTaskSessionForWake(
   if (wakeReason === "issue_assigned") return true;
 
   const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
-  if (wakeSource === "timer") return true;
-
   const wakeTriggerDetail = readNonEmptyString(contextSnapshot?.wakeTriggerDetail);
   return wakeSource === "on_demand" && wakeTriggerDetail === "manual";
 }
@@ -215,8 +215,6 @@ function describeSessionResetReason(
   if (wakeReason === "issue_assigned") return "wake reason is issue_assigned";
 
   const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
-  if (wakeSource === "timer") return "wake source is timer";
-
   const wakeTriggerDetail = readNonEmptyString(contextSnapshot?.wakeTriggerDetail);
   if (wakeSource === "on_demand" && wakeTriggerDetail === "manual") {
     return "this is a manual invoke";
@@ -827,6 +825,73 @@ export function heartbeatService(db: Db) {
     return Number(count ?? 0);
   }
 
+  async function getRecentTimeoutCount(agentId: string, limit = HEARTBEAT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD) {
+    const recentRuns = await db
+      .select({ errorCode: heartbeatRuns.errorCode, status: heartbeatRuns.status, invocationSource: heartbeatRuns.invocationSource })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.agentId, agentId))
+      .orderBy(desc(heartbeatRuns.startedAt), desc(heartbeatRuns.createdAt))
+      .limit(limit);
+
+    let consecutive = 0;
+    for (const run of recentRuns) {
+      if (run.invocationSource !== "timer") break;
+      if (run.status === "timed_out" || run.errorCode === "timeout") {
+        consecutive += 1;
+        continue;
+      }
+      break;
+    }
+    return consecutive;
+  }
+
+  async function maybeApplyTimeoutCircuitBreaker(agent: typeof agents.$inferSelect, run: typeof heartbeatRuns.$inferSelect) {
+    if (run.invocationSource !== "timer") return false;
+    const consecutiveTimeouts = await getRecentTimeoutCount(agent.id);
+    if (consecutiveTimeouts < HEARTBEAT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD) return false;
+
+    const runtimeConfig = parseObject(agent.runtimeConfig);
+    const heartbeat = parseObject(runtimeConfig.heartbeat);
+    const intervalSec = Math.max(1, asNumber(heartbeat.intervalSec, 0));
+    const backedOffIntervalSec = Math.max(
+      intervalSec,
+      intervalSec * HEARTBEAT_TIMEOUT_CIRCUIT_BREAKER_BACKOFF_MULTIPLIER,
+    );
+
+    const nextRuntimeConfig = {
+      ...runtimeConfig,
+      heartbeat: {
+        ...heartbeat,
+        enabled: false,
+        intervalSec: backedOffIntervalSec,
+        disabledReason: `auto_paused_after_${consecutiveTimeouts}_timer_timeouts`,
+        disabledAt: new Date().toISOString(),
+      },
+    };
+
+    await db
+      .update(agents)
+      .set({
+        status: "error",
+        runtimeConfig: nextRuntimeConfig,
+        updatedAt: new Date(),
+      })
+      .where(eq(agents.id, agent.id));
+
+    logger.warn(
+      {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        runId: run.id,
+        consecutiveTimeouts,
+        backedOffIntervalSec,
+      },
+      "heartbeat timer circuit breaker tripped after repeated timeouts",
+    );
+
+    return true;
+  }
+
   async function claimQueuedRun(run: typeof heartbeatRuns.$inferSelect) {
     if (run.status !== "queued") return run;
     const claimedAt = new Date();
@@ -1407,6 +1472,9 @@ export function heartbeatService(db: Db) {
       }
 
       if (finalizedRun) {
+        if (outcome === "timed_out") {
+          await maybeApplyTimeoutCircuitBreaker(agent, finalizedRun);
+        }
         await updateRuntimeState(agent, finalizedRun, adapterResult, {
           legacySessionId: nextSessionState.legacySessionId,
         });
