@@ -198,6 +198,7 @@ function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number
 type ArtifactRef = {
   assetId: string;
   label?: string;
+  summary?: string;
   kind?: string;
   role?: string;
 };
@@ -208,9 +209,32 @@ function normalizeArtifactRef(value: unknown): ArtifactRef | null {
   const assetId = getString(record.assetId || record.id).trim();
   if (!assetId) return null;
   const label = getString(record.label || record.name || record.title).trim() || undefined;
+  const summary = getString(record.summary || record.description || record.explanation).trim() || undefined;
   const kind = getString(record.kind || record.type).trim() || undefined;
   const role = getString(record.role).trim() || undefined;
-  return { assetId, label, kind, role };
+  return { assetId, label, summary, kind, role };
+}
+
+function humanizeToken(value: string | undefined): string | null {
+  const token = value?.trim();
+  if (!token) return null;
+  return token
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function artifactBadgeTone(role?: string): string {
+  const normalized = (role || "").toLowerCase();
+  if (["primary", "preview", "primary_preview"].includes(normalized)) {
+    return "border-cyan-500/30 bg-cyan-500/10 text-cyan-700 dark:text-cyan-300";
+  }
+  if (["draft", "proposal"].includes(normalized)) {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+  if (["supporting", "attachment", "evidence", "reference"].includes(normalized)) {
+    return "border-border bg-background text-muted-foreground";
+  }
+  return "border-border bg-background text-muted-foreground";
 }
 
 function artifactSectionLabel(artifacts: ArtifactRef[]): string {
@@ -223,7 +247,7 @@ function artifactSectionLabel(artifacts: ArtifactRef[]): string {
   return "Artifacts";
 }
 
-function AssetPreview({ assetId, index, label: preferredLabel }: { assetId: string; index?: number; label?: string }) {
+function AssetPreview({ assetId, index, label: preferredLabel, summary, kind, role }: { assetId: string; index?: number; label?: string; summary?: string; kind?: string; role?: string }) {
   const [meta, setMeta] = useState<AssetMeta | null>(null);
   const [textPreview, setTextPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -279,12 +303,27 @@ function AssetPreview({ assetId, index, label: preferredLabel }: { assetId: stri
 
   const ct = (meta?.contentType || "").toLowerCase();
   const label = humanAssetLabel(meta, assetId, index, preferredLabel);
+  const roleLabel = humanizeToken(role);
+  const kindLabel = humanizeToken(kind) || humanizeToken(meta?.contentType?.split("/")[0]);
 
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-medium truncate">{label}</div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-medium truncate">{label}</div>
+            {roleLabel && (
+              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${artifactBadgeTone(role)}`}>
+                {roleLabel}
+              </span>
+            )}
+            {kindLabel && (
+              <span className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+                {kindLabel}
+              </span>
+            )}
+          </div>
+          {summary && <div className="text-xs text-muted-foreground leading-relaxed">{summary}</div>}
           <div className="text-xs text-muted-foreground truncate">
             {meta?.contentType ? `${meta.contentType}` : "Unknown type"}
             {typeof meta?.byteSize === "number" ? ` • ${meta.byteSize} bytes` : ""}
@@ -368,16 +407,15 @@ export function ActionExecutionPayload({ payload }: { payload: Record<string, un
           <div className="text-xs text-muted-foreground">{sectionLabel}</div>
           <div className="mt-2 space-y-3">
             {normalizedArtifacts.map((item, index) => (
-              <div key={`${item.assetId}:${index}`} className="space-y-1">
-                <AssetPreview assetId={item.assetId} index={index} label={item.label} />
-                {(item.kind || item.role) && (
-                  <div className="text-[11px] text-muted-foreground px-1">
-                    {item.kind ? `kind: ${item.kind}` : null}
-                    {item.kind && item.role ? " • " : null}
-                    {item.role ? `role: ${item.role}` : null}
-                  </div>
-                )}
-              </div>
+              <AssetPreview
+                key={`${item.assetId}:${index}`}
+                assetId={item.assetId}
+                index={index}
+                label={item.label}
+                summary={item.summary}
+                kind={item.kind}
+                role={item.role}
+              />
             ))}
           </div>
         </div>
