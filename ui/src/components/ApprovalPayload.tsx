@@ -195,10 +195,33 @@ function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number
   return typeof index === "number" ? `${kind} ${index + 1}` : `${kind} (${assetId.slice(0, 8)})`;
 }
 
-type PreviewAssetRef = {
+type ArtifactRef = {
   assetId: string;
   label?: string;
+  kind?: string;
+  role?: string;
 };
+
+function normalizeArtifactRef(value: unknown): ArtifactRef | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const assetId = getString(record.assetId || record.id).trim();
+  if (!assetId) return null;
+  const label = getString(record.label || record.name || record.title).trim() || undefined;
+  const kind = getString(record.kind || record.type).trim() || undefined;
+  const role = getString(record.role).trim() || undefined;
+  return { assetId, label, kind, role };
+}
+
+function artifactSectionLabel(artifacts: ArtifactRef[]): string {
+  const previewCount = artifacts.filter((artifact) => {
+    const role = (artifact.role || "").toLowerCase();
+    return role === "preview" || role === "primary_preview";
+  }).length;
+  if (previewCount > 0 && previewCount === artifacts.length) return "Previews";
+  if (previewCount > 0) return "Artifacts & previews";
+  return "Artifacts";
+}
 
 function AssetPreview({ assetId, index, label: preferredLabel }: { assetId: string; index?: number; label?: string }) {
   const [meta, setMeta] = useState<AssetMeta | null>(null);
@@ -302,23 +325,32 @@ function AssetPreview({ assetId, index, label: preferredLabel }: { assetId: stri
 export function ActionExecutionPayload({ payload }: { payload: Record<string, unknown> }) {
   const summary = getString(payload.summary || payload.title || payload.description);
   const actionType = getString(payload.actionType || (payload.action as any)?.type || (payload.action as any)?.kind);
-  const previewAssets: PreviewAssetRef[] = Array.isArray(payload.previewAssets)
-    ? (payload.previewAssets as any[])
-        .flatMap((item): PreviewAssetRef[] => {
-          if (!item || typeof item !== "object") return [];
-          const record = item as Record<string, unknown>;
-          const assetId = getString(record.assetId || record.id).trim();
-          if (!assetId) return [];
-          const label = getString(record.label || record.name || record.title).trim() || undefined;
-          return [{ assetId, label }];
-        })
+
+  const artifacts: ArtifactRef[] = Array.isArray(payload.artifacts)
+    ? (payload.artifacts as unknown[])
+        .map(normalizeArtifactRef)
+        .filter((item): item is ArtifactRef => Boolean(item))
     : [];
+
+  const previewAssets: ArtifactRef[] = Array.isArray(payload.previewAssets)
+    ? (payload.previewAssets as unknown[])
+        .map(normalizeArtifactRef)
+        .filter((item): item is ArtifactRef => Boolean(item))
+        .map((item) => ({ ...item, role: item.role ?? "preview" }))
+    : [];
+
   const fallbackPreviewAssetIds: string[] = Array.isArray(payload.previewAssetIds)
     ? (payload.previewAssetIds as any[]).map((x) => (typeof x === "string" ? x : "")).filter(Boolean)
     : [];
-  const normalizedPreviewAssets: PreviewAssetRef[] = previewAssets.length > 0
-    ? previewAssets
-    : fallbackPreviewAssetIds.map((assetId) => ({ assetId }));
+
+  const normalizedArtifacts: ArtifactRef[] = artifacts.length > 0
+    ? artifacts
+    : previewAssets.length > 0
+      ? previewAssets
+      : fallbackPreviewAssetIds.map((assetId) => ({ assetId, role: "preview" }));
+
+  const sectionLabel = artifactSectionLabel(normalizedArtifacts);
+
   return (
     <div className="mt-3 space-y-2 text-sm">
       {summary && (
@@ -331,17 +363,26 @@ export function ActionExecutionPayload({ payload }: { payload: Record<string, un
           Action type: <span className="font-mono">{actionType}</span>
         </div>
       )}
-      {normalizedPreviewAssets.length > 0 ? (
+      {normalizedArtifacts.length > 0 ? (
         <div>
-          <div className="text-xs text-muted-foreground">Previews</div>
+          <div className="text-xs text-muted-foreground">{sectionLabel}</div>
           <div className="mt-2 space-y-3">
-            {normalizedPreviewAssets.map((item, index) => (
-              <AssetPreview key={`${item.assetId}:${index}`} assetId={item.assetId} index={index} label={item.label} />
+            {normalizedArtifacts.map((item, index) => (
+              <div key={`${item.assetId}:${index}`} className="space-y-1">
+                <AssetPreview assetId={item.assetId} index={index} label={item.label} />
+                {(item.kind || item.role) && (
+                  <div className="text-[11px] text-muted-foreground px-1">
+                    {item.kind ? `kind: ${item.kind}` : null}
+                    {item.kind && item.role ? " • " : null}
+                    {item.role ? `role: ${item.role}` : null}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
       ) : (
-        <div className="text-xs text-muted-foreground">No previews attached.</div>
+        <div className="text-xs text-muted-foreground">No artifacts attached.</div>
       )}
       <details>
         <summary className="cursor-pointer text-xs text-muted-foreground">Raw payload</summary>
