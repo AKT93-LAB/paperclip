@@ -176,7 +176,10 @@ function looksRandomFilename(name: string | null | undefined): boolean {
   return /^[a-f0-9-]{12,}$/i.test(stem);
 }
 
-function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number): string {
+function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number, preferredLabel?: string): string {
+  const explicitLabel = preferredLabel?.trim() || "";
+  if (explicitLabel) return explicitLabel;
+
   const preferredName = meta?.originalFilename?.trim() || "";
   if (preferredName && !looksRandomFilename(preferredName)) return preferredName;
 
@@ -192,7 +195,12 @@ function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number
   return typeof index === "number" ? `${kind} ${index + 1}` : `${kind} (${assetId.slice(0, 8)})`;
 }
 
-function AssetPreview({ assetId, index }: { assetId: string; index?: number }) {
+type PreviewAssetRef = {
+  assetId: string;
+  label?: string;
+};
+
+function AssetPreview({ assetId, index, label: preferredLabel }: { assetId: string; index?: number; label?: string }) {
   const [meta, setMeta] = useState<AssetMeta | null>(null);
   const [textPreview, setTextPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -247,7 +255,7 @@ function AssetPreview({ assetId, index }: { assetId: string; index?: number }) {
   }, [assetId, contentUrl]);
 
   const ct = (meta?.contentType || "").toLowerCase();
-  const label = humanAssetLabel(meta, assetId, index);
+  const label = humanAssetLabel(meta, assetId, index, preferredLabel);
 
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
@@ -294,9 +302,23 @@ function AssetPreview({ assetId, index }: { assetId: string; index?: number }) {
 export function ActionExecutionPayload({ payload }: { payload: Record<string, unknown> }) {
   const summary = getString(payload.summary || payload.title || payload.description);
   const actionType = getString(payload.actionType || (payload.action as any)?.type || (payload.action as any)?.kind);
-  const previewAssetIds: string[] = Array.isArray(payload.previewAssetIds)
+  const previewAssets: PreviewAssetRef[] = Array.isArray(payload.previewAssets)
+    ? (payload.previewAssets as any[])
+        .flatMap((item): PreviewAssetRef[] => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as Record<string, unknown>;
+          const assetId = getString(record.assetId || record.id).trim();
+          if (!assetId) return [];
+          const label = getString(record.label || record.name || record.title).trim() || undefined;
+          return [{ assetId, label }];
+        })
+    : [];
+  const fallbackPreviewAssetIds: string[] = Array.isArray(payload.previewAssetIds)
     ? (payload.previewAssetIds as any[]).map((x) => (typeof x === "string" ? x : "")).filter(Boolean)
     : [];
+  const normalizedPreviewAssets: PreviewAssetRef[] = previewAssets.length > 0
+    ? previewAssets
+    : fallbackPreviewAssetIds.map((assetId) => ({ assetId }));
   return (
     <div className="mt-3 space-y-2 text-sm">
       {summary && (
@@ -309,12 +331,12 @@ export function ActionExecutionPayload({ payload }: { payload: Record<string, un
           Action type: <span className="font-mono">{actionType}</span>
         </div>
       )}
-      {previewAssetIds.length > 0 ? (
+      {normalizedPreviewAssets.length > 0 ? (
         <div>
           <div className="text-xs text-muted-foreground">Previews</div>
           <div className="mt-2 space-y-3">
-            {previewAssetIds.map((id, index) => (
-              <AssetPreview key={id} assetId={id} index={index} />
+            {normalizedPreviewAssets.map((item, index) => (
+              <AssetPreview key={`${item.assetId}:${index}`} assetId={item.assetId} index={index} label={item.label} />
             ))}
           </div>
         </div>
