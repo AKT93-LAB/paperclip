@@ -64,7 +64,8 @@ export function approvalRoutes(db: Db) {
       : [];
     const uniqueIssueIds = Array.from(new Set(issueIds));
     const { issueIds: _issueIds, ...approvalInput } = req.body;
-    const normalizedPayload =
+
+    let normalizedPayload =
       approvalInput.type === "hire_agent"
         ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
             companyId,
@@ -72,6 +73,52 @@ export function approvalRoutes(db: Db) {
             { strictMode: strictSecretsMode },
           )
         : approvalInput.payload;
+
+    // Universal artifact normalization:
+    // Preferred producer shape: payload.artifacts[].
+    // Legacy producer shape: payload.previewAssetIds[] + action.payload with `*AssetId` fields.
+    // Normalize legacy into artifacts so the approval UI is human-reviewable for ANY agent/project.
+    if (approvalInput.type === "action_execution" && normalizedPayload && typeof normalizedPayload === "object") {
+      const payload = normalizedPayload as Record<string, unknown>;
+      const hasArtifacts = Array.isArray((payload as any).artifacts) && (payload as any).artifacts.length > 0;
+
+      if (!hasArtifacts) {
+        const previewAssetIds: string[] = Array.isArray((payload as any).previewAssetIds)
+          ? ((payload as any).previewAssetIds as any[]).filter((id) => typeof id === "string")
+          : [];
+
+        const action = (((payload as any).action ?? payload) as any) as Record<string, unknown>;
+        const actionPayload =
+          action && typeof (action as any).payload === "object" && (action as any).payload
+            ? ((action as any).payload as Record<string, unknown>)
+            : {};
+
+        // Build best-effort labels from `*AssetId` keys so artifacts can be understandable without
+        // requiring agent-specific hardcoding.
+        const labelsByAssetId = new Map<string, string>();
+        for (const [k, v] of Object.entries(actionPayload)) {
+          if (typeof v !== "string") continue;
+          if (!k.toLowerCase().endsWith("assetid")) continue;
+          const base = k.slice(0, -"AssetId".length);
+          const label = base
+            ? base
+                .replace(/[_-]+/g, " ")
+                .replace(/\b\w/g, (char) => char.toUpperCase())
+            : "Artifact";
+          labelsByAssetId.set(v, label);
+        }
+
+        if (previewAssetIds.length > 0) {
+          (payload as any).artifacts = previewAssetIds.map((assetId) => ({
+            assetId,
+            label: labelsByAssetId.get(assetId),
+            role: "supporting",
+          }));
+        }
+
+        normalizedPayload = payload;
+      }
+    }
 
     const actor = getActorInfo(req);
     const approval = await svc.create(companyId, {
