@@ -23,6 +23,8 @@
 
 <br/>
 
+> **Working on this fork?** Start with `docs/SESSION_HANDOFF_2026-03-10.md` and `/root/.openclaw/workspace/docs/PAPERCLIP_HANDOFF.md` before changing autonomy, approvals, or runtime behavior.
+
 ## What is Paperclip?
 
 # Open-source orchestration for zero-human companies

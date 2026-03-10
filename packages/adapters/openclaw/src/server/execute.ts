@@ -586,11 +586,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ...payloadTemplate,
       stream: true,
       model: configuredModel,
-      ...(configuredThinking ? { thinking: configuredThinking } : {}),
-      ...(Number.isFinite(configuredContextTokens) && configuredContextTokens > 0
-        ? { contextTokens: Math.trunc(configuredContextTokens) }
-        : {}),
-      ...(configuredRoutingProfile ? { routingProfile: configuredRoutingProfile } : {}),
       input: openResponsesInput,
       metadata: {
         ...toStringRecord(payloadTemplate.metadata),
