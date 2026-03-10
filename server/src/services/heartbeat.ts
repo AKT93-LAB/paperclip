@@ -1425,6 +1425,23 @@ export function heartbeatService(db: Db) {
         agent.companyId,
         mergedConfig,
       );
+      const routingConfig = parseObject(parseObject(agent.runtimeConfig).routing);
+      const routingTargetModel = readNonEmptyString(routingConfig.targetModel);
+      const routingTargetThinking = readNonEmptyString(routingConfig.targetThinking);
+      const routingTargetContextTokens = asNumber(routingConfig.targetContextTokens, NaN);
+      const routingProfile = readNonEmptyString(routingConfig.profile);
+      if (routingTargetModel) {
+        resolvedConfig.model = routingTargetModel;
+      }
+      if (Number.isFinite(routingTargetContextTokens) && routingTargetContextTokens > 0) {
+        resolvedConfig.contextTokens = Math.trunc(routingTargetContextTokens);
+      }
+      if (routingTargetThinking) {
+        resolvedConfig.thinking = routingTargetThinking;
+      }
+      if (routingProfile) {
+        resolvedConfig.routingProfile = routingProfile;
+      }
       const onAdapterMeta = async (meta: AdapterInvocationMeta) => {
         await appendRunEvent(currentRun, seq++, {
           eventType: "adapter.invoke",

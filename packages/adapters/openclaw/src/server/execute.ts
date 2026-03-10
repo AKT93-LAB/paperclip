@@ -571,18 +571,35 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ? appendWakeTextToOpenResponsesInput(payloadTemplate.input, wakeText)
     : payloadText;
 
+  const configuredModel = nonEmpty(payloadTemplate.model) ?? nonEmpty(config.model) ?? "openclaw";
+  const configuredThinking = nonEmpty(payloadTemplate.thinking) ?? nonEmpty(config.thinking);
+  const configuredRoutingProfile = nonEmpty(payloadTemplate.routingProfile) ?? nonEmpty(config.routingProfile);
+  const configuredContextTokens = asNumber(
+    Object.prototype.hasOwnProperty.call(payloadTemplate, "contextTokens")
+      ? payloadTemplate.contextTokens
+      : config.contextTokens,
+    NaN,
+  );
+
   const paperclipBody: Record<string, unknown> = isOpenResponses
     ? {
       ...payloadTemplate,
       stream: true,
-      model:
-          nonEmpty(payloadTemplate.model) ??
-          nonEmpty(config.model) ??
-          "openclaw",
+      model: configuredModel,
+      ...(configuredThinking ? { thinking: configuredThinking } : {}),
+      ...(Number.isFinite(configuredContextTokens) && configuredContextTokens > 0
+        ? { contextTokens: Math.trunc(configuredContextTokens) }
+        : {}),
+      ...(configuredRoutingProfile ? { routingProfile: configuredRoutingProfile } : {}),
       input: openResponsesInput,
       metadata: {
         ...toStringRecord(payloadTemplate.metadata),
         ...paperclipEnv,
+        ...(configuredRoutingProfile ? { paperclip_routing_profile: configuredRoutingProfile } : {}),
+        ...(Number.isFinite(configuredContextTokens) && configuredContextTokens > 0
+          ? { paperclip_target_context_tokens: String(Math.trunc(configuredContextTokens)) }
+          : {}),
+        ...(configuredThinking ? { paperclip_target_thinking: configuredThinking } : {}),
         paperclip_session_key: sessionKey,
       },
     }
