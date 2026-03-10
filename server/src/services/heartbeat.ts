@@ -201,7 +201,11 @@ export function shouldResetTaskSessionForWake(
   contextSnapshot: Record<string, unknown> | null | undefined,
 ) {
   const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
-  if (wakeReason === "issue_assigned") return true;
+  if (
+    wakeReason === "issue_assigned" ||
+    wakeReason === "openclaw_no_reply_recovery" ||
+    wakeReason === "issue_stale"
+  ) return true;
 
   const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
   const wakeTriggerDetail = readNonEmptyString(contextSnapshot?.wakeTriggerDetail);
@@ -213,6 +217,12 @@ function describeSessionResetReason(
 ) {
   const wakeReason = readNonEmptyString(contextSnapshot?.wakeReason);
   if (wakeReason === "issue_assigned") return "wake reason is issue_assigned";
+  if (wakeReason === "openclaw_no_reply_recovery") {
+    return "recovering from an OpenClaw no-reply failure";
+  }
+  if (wakeReason === "issue_stale") {
+    return "wake reason is issue_stale";
+  }
 
   const wakeSource = readNonEmptyString(contextSnapshot?.wakeSource);
   const wakeTriggerDetail = readNonEmptyString(contextSnapshot?.wakeTriggerDetail);
