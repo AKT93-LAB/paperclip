@@ -892,6 +892,84 @@ export function heartbeatService(db: Db) {
     return true;
   }
 
+  async function maybeRecoverNoReplyRun(agent: typeof agents.$inferSelect, run: typeof heartbeatRuns.$inferSelect) {
+    const contextSnapshot = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(contextSnapshot.issueId);
+    const taskKey = deriveTaskKey(contextSnapshot, null);
+    const errorCode = readNonEmptyString(run.errorCode);
+    const recoveryAttempt = asNumber(contextSnapshot.recoveryAttempt, 0);
+
+    if (agent.adapterType !== "openclaw") return false;
+    if (run.status !== "failed") return false;
+    if (errorCode !== "openclaw_no_reply") return false;
+    if (!issueId || !taskKey) return false;
+    if (run.invocationSource === "timer") return false;
+    if (recoveryAttempt >= 1) return false;
+
+    await appendRunEvent(run, 10_000, {
+      eventType: "recovery",
+      stream: "system",
+      level: "warn",
+      message: "auto-recovering after OpenClaw no-reply",
+      payload: {
+        strategy: "reset_runtime_session_and_retry_once",
+        issueId,
+        taskKey,
+      },
+    });
+
+    await clearTaskSessions(agent.companyId, agent.id, {
+      taskKey,
+      adapterType: agent.adapterType,
+    });
+
+    await db
+      .update(agentRuntimeState)
+      .set({
+        sessionId: null,
+        lastError: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(agentRuntimeState.agentId, agent.id));
+
+    await enqueueWakeup(agent.id, {
+      source: run.invocationSource as "timer" | "assignment" | "on_demand" | "automation",
+      triggerDetail: run.triggerDetail as "manual" | "ping" | "callback" | "system" | null,
+      reason: "openclaw_no_reply_recovery",
+      payload: {
+        issueId,
+        taskId: issueId,
+        taskKey,
+        retryOfRunId: run.id,
+      },
+      requestedByActorType: "system",
+      requestedByActorId: "heartbeat-recovery",
+      contextSnapshot: {
+        ...contextSnapshot,
+        issueId,
+        taskId: issueId,
+        taskKey,
+        wakeReason: "openclaw_no_reply_recovery",
+        recoveryAttempt: recoveryAttempt + 1,
+        recoveredFromRunId: run.id,
+      },
+      idempotencyKey: `${run.id}:openclaw_no_reply_recovery`,
+    });
+
+    logger.warn(
+      {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        runId: run.id,
+        issueId,
+        taskKey,
+      },
+      "queued automatic retry after OpenClaw no-reply failure",
+    );
+
+    return true;
+  }
+
   async function claimQueuedRun(run: typeof heartbeatRuns.$inferSelect) {
     if (run.status !== "queued") return run;
     const claimedAt = new Date();
@@ -1475,6 +1553,7 @@ export function heartbeatService(db: Db) {
         if (outcome === "timed_out") {
           await maybeApplyTimeoutCircuitBreaker(agent, finalizedRun);
         }
+        await maybeRecoverNoReplyRun(agent, finalizedRun);
         await updateRuntimeState(agent, finalizedRun, adapterResult, {
           legacySessionId: nextSessionState.legacySessionId,
         });
