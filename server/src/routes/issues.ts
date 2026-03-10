@@ -904,7 +904,25 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    if (!(await assertAgentRunCheckoutOwnership(req, res, issue, { allowAssigneeCommentFallback: true }))) return;
+    try {
+      if (!(await assertAgentRunCheckoutOwnership(req, res, issue, { allowAssigneeCommentFallback: true }))) return;
+    } catch (err) {
+      if (err instanceof HttpError) {
+        logger.warn(
+          {
+            issueId: issue.id,
+            companyId: issue.companyId,
+            actorType: req.actor.type,
+            actorAgentId: req.actor.type === "agent" ? req.actor.agentId ?? null : null,
+            actorRunId: req.actor.type === "agent" ? req.actor.runId ?? null : null,
+            error: err.message,
+            details: err.details,
+          },
+          "issue comment ownership check failed",
+        );
+      }
+      throw err;
+    }
 
     const actor = getActorInfo(req);
     const reopenRequested = req.body.reopen === true;
