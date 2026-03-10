@@ -103,7 +103,7 @@ export function NewProjectDialog() {
     if (!template) return;
     setSelectedTemplateId(template.id);
     setName((current) => current.trim().length > 0 ? current : template.projectName);
-    setDescription(template.description);
+    setDescription((current) => current.trim().length > 0 ? current : template.projectDescription);
     setStatus(template.status);
   }
 
@@ -311,6 +311,9 @@ export function NewProjectDialog() {
                 >
                   <div className="text-sm font-medium">{template.name}</div>
                   <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{template.summary}</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground/80">
+                    Creates {template.starterIssues.length} starter issue{template.starterIssues.length === 1 ? "" : "s"}.
+                  </p>
                 </button>
               );
             })}

@@ -10,6 +10,7 @@ export type ProjectTemplate = {
   name: string;
   summary: string;
   projectName: string;
+  projectDescription: string;
   status: "backlog" | "planned" | "in_progress" | "completed" | "cancelled";
   description: string;
   starterIssues: ProjectTemplateIssue[];
@@ -238,6 +239,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     name: "Universal approval-first project",
     summary: "Reusable operating model for any agent project: direction, artifact, and execution gates.",
     projectName: "Approval-first Project OS",
+    projectDescription: "Approval-first project setup with explicit direction, artifact, and execution gates for agent-led work.",
     status: "planned",
     description: universalDescription,
     starterIssues: universalStarterIssues,
@@ -247,6 +249,7 @@ export const PROJECT_TEMPLATES: ProjectTemplate[] = [
     name: "TikTok growth experiment",
     summary: "Example instantiation of the universal model for idea → production → publish → review.",
     projectName: "TikTok Growth Engine",
+    projectDescription: "Approval-first TikTok growth workflow covering strategy, content production, publish approval, and review.",
     status: "planned",
     description: tiktokDescription,
     starterIssues: tiktokStarterIssues,
