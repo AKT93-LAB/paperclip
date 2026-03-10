@@ -942,6 +942,47 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const reopenRequested = req.body.reopen === true;
     const interruptRequested = req.body.interrupt === true;
     const isClosed = issue.status === "done" || issue.status === "cancelled";
+
+    if (
+      actor.actorType === "agent" &&
+      actor.agentId &&
+      issue.assigneeAgentId === actor.agentId &&
+      !reopenRequested &&
+      !interruptRequested
+    ) {
+      const directComment = await svc.addComment(id, req.body.body, {
+        agentId: actor.agentId,
+      });
+
+      await progress.record({
+        companyId: issue.companyId,
+        issueId: issue.id,
+        eventType: "comment_added",
+        actor: { actorType: "agent", actorAgentId: actor.agentId, runId: actor.runId },
+        metadata: { commentId: directComment.id, directAgentComment: true },
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.comment_added",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          commentId: directComment.id,
+          bodySnippet: directComment.body.slice(0, 120),
+          identifier: issue.identifier,
+          issueTitle: issue.title,
+          source: "direct_agent_comment",
+        },
+      });
+
+      res.json({ ...issue, comment: directComment });
+      return;
+    }
     let reopened = false;
     let reopenFromStatus: string | null = null;
     let interruptedRunId: string | null = null;
