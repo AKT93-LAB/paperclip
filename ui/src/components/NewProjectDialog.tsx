@@ -4,8 +4,10 @@ import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { projectsApi } from "../api/projects";
 import { goalsApi } from "../api/goals";
+import { issuesApi } from "../api/issues";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
+import { PROJECT_TEMPLATES, getProjectTemplateById } from "../lib/project-templates";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +60,7 @@ export function NewProjectDialog() {
   const [workspaceLocalPath, setWorkspaceLocalPath] = useState("");
   const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -92,6 +95,16 @@ export function NewProjectDialog() {
     setWorkspaceLocalPath("");
     setWorkspaceRepoUrl("");
     setWorkspaceError(null);
+    setSelectedTemplateId(null);
+  }
+
+  function applyTemplate(templateId: string) {
+    const template = getProjectTemplateById(templateId);
+    if (!template) return;
+    setSelectedTemplateId(template.id);
+    setName((current) => current.trim().length > 0 ? current : template.projectName);
+    setDescription(template.description);
+    setStatus(template.status);
   }
 
   const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
@@ -149,6 +162,7 @@ export function NewProjectDialog() {
     setWorkspaceError(null);
 
     try {
+      const template = getProjectTemplateById(selectedTemplateId);
       const created = await createProject.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
@@ -181,6 +195,18 @@ export function NewProjectDialog() {
         await projectsApi.createWorkspace(created.id, {
           ...workspacePayload,
         });
+      }
+
+      if (template?.starterIssues?.length) {
+        for (const starterIssue of template.starterIssues) {
+          await issuesApi.create(selectedCompanyId!, {
+            projectId: created.id,
+            title: starterIssue.title,
+            description: starterIssue.description,
+            priority: starterIssue.priority ?? "medium",
+            status: starterIssue.status ?? "backlog",
+          });
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
@@ -263,6 +289,32 @@ export function NewProjectDialog() {
             }}
             autoFocus
           />
+        </div>
+
+        <div className="px-4 pb-2 space-y-2">
+          <div>
+            <p className="text-sm font-medium">Start from a template</p>
+            <p className="text-xs text-muted-foreground">Use the universal approval-first model for any project, or start from the TikTok example.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {PROJECT_TEMPLATES.map((template) => {
+              const selected = selectedTemplateId === template.id;
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  className={cn(
+                    "rounded-lg border px-3 py-3 text-left transition-colors",
+                    selected ? "border-foreground bg-accent/40" : "border-border hover:bg-accent/30",
+                  )}
+                  onClick={() => applyTemplate(template.id)}
+                >
+                  <div className="text-sm font-medium">{template.name}</div>
+                  <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{template.summary}</p>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Description */}
