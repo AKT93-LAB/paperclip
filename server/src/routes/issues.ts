@@ -1022,45 +1022,64 @@ export function issueRoutes(db: Db, storage: StorageService) {
       }
     }
 
-    const comment = await svc.addComment(id, req.body.body, {
-      agentId: actor.agentId ?? undefined,
-      userId: actor.actorType === "user" ? actor.actorId : undefined,
-    });
+    let comment;
+    try {
+      comment = await svc.addComment(id, req.body.body, {
+        agentId: actor.agentId ?? undefined,
+        userId: actor.actorType === "user" ? actor.actorId : undefined,
+      });
 
-    // Progress signal: comment added
-    await progress.record({
-      companyId: currentIssue.companyId,
-      issueId: currentIssue.id,
-      eventType: "comment_added",
-      actor:
-        actor.actorType === "agent" && actor.agentId
-          ? { actorType: "agent", actorAgentId: actor.agentId, runId: actor.runId }
-          : { actorType: "user", actorUserId: actor.actorId, runId: actor.runId },
-      metadata: {
-        commentId: comment.id,
-        reopened,
-        interruptedRunId: interruptedRunId ?? null,
-      },
-    });
+      // Progress signal: comment added
+      await progress.record({
+        companyId: currentIssue.companyId,
+        issueId: currentIssue.id,
+        eventType: "comment_added",
+        actor:
+          actor.actorType === "agent" && actor.agentId
+            ? { actorType: "agent", actorAgentId: actor.agentId, runId: actor.runId }
+            : { actorType: "user", actorUserId: actor.actorId, runId: actor.runId },
+        metadata: {
+          commentId: comment.id,
+          reopened,
+          interruptedRunId: interruptedRunId ?? null,
+        },
+      });
 
-    await logActivity(db, {
-      companyId: currentIssue.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      action: "issue.comment_added",
-      entityType: "issue",
-      entityId: currentIssue.id,
-      details: {
-        commentId: comment.id,
-        bodySnippet: comment.body.slice(0, 120),
-        identifier: currentIssue.identifier,
-        issueTitle: currentIssue.title,
-        ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus, source: "comment" } : {}),
-        ...(interruptedRunId ? { interruptedRunId } : {}),
-      },
-    });
+      await logActivity(db, {
+        companyId: currentIssue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.comment_added",
+        entityType: "issue",
+        entityId: currentIssue.id,
+        details: {
+          commentId: comment.id,
+          bodySnippet: comment.body.slice(0, 120),
+          identifier: currentIssue.identifier,
+          issueTitle: currentIssue.title,
+          ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus, source: "comment" } : {}),
+          ...(interruptedRunId ? { interruptedRunId } : {}),
+        },
+      });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        logger.warn(
+          {
+            issueId: currentIssue.id,
+            companyId: currentIssue.companyId,
+            actorType: actor.actorType,
+            actorAgentId: actor.agentId ?? null,
+            actorRunId: actor.runId ?? null,
+            error: err.message,
+            details: err.details,
+          },
+          "issue comment mutation failed",
+        );
+      }
+      throw err;
+    }
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
     // Enterprise: allow agents to post INTERNAL comments without triggering automation wakes.
