@@ -123,6 +123,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     req: Request,
     res: Response,
     issue: { id: string; companyId: string; status: string; assigneeAgentId: string | null },
+    opts?: { allowAssigneeCommentFallback?: boolean },
   ) {
     if (req.actor.type !== "agent") return true;
     const actorAgentId = req.actor.agentId;
@@ -135,7 +136,67 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
     const runId = requireAgentRunId(req, res);
     if (!runId) return false;
-    const ownership = await svc.assertCheckoutOwner(issue.id, actorAgentId, runId);
+    try {
+      const ownership = await svc.assertCheckoutOwner(issue.id, actorAgentId, runId);
+      if (ownership.adoptedFromRunId) {
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId: issue.companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "issue.checkout_lock_adopted",
+          entityType: "issue",
+          entityId: issue.id,
+          details: {
+            previousCheckoutRunId: ownership.adoptedFromRunId,
+            checkoutRunId: runId,
+            reason: "stale_checkout_run",
+          },
+        });
+      }
+      return true;
+    } catch (err) {
+      if (
+        opts?.allowAssigneeCommentFallback &&
+        err instanceof HttpError &&
+        err.status === 409
+      ) {
+        logger.warn(
+          {
+            issueId: issue.id,
+            companyId: issue.companyId,
+            actorAgentId,
+            runId,
+            details: err.details,
+          },
+          "allowing assignee comment fallback despite checkout ownership conflict",
+        );
+        return true;
+      }
+      throw err;
+    }
+-    if (ownership.adoptedFromRunId) {
+-      const actor = getActorInfo(req);
+-      await logActivity(db, {
+-        companyId: issue.companyId,
+-        actorType: actor.actorType,
+-        actorId: actor.actorId,
+-        agentId: actor.agentId,
+-        runId: actor.runId,
+-        action: "issue.checkout_lock_adopted",
+-        entityType: "issue",
+-        entityId: issue.id,
+-        details: {
+-          previousCheckoutRunId: ownership.adoptedFromRunId,
+-          checkoutRunId: runId,
+-          reason: "stale_checkout_run",
+-        },
+-      });
+-    }
+-    return true;
+  }
     if (ownership.adoptedFromRunId) {
       const actor = getActorInfo(req);
       await logActivity(db, {
@@ -843,7 +904,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    if (!(await assertAgentRunCheckoutOwnership(req, res, issue))) return;
+    if (!(await assertAgentRunCheckoutOwnership(req, res, issue, { allowAssigneeCommentFallback: true }))) return;
 
     const actor = getActorInfo(req);
     const reopenRequested = req.body.reopen === true;
