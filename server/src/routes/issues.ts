@@ -27,6 +27,7 @@ import { logger } from "../middleware/logger.js";
 import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
+import { shouldWakeAssigneeOnComment } from "./issues-comment-wakeup.js";
 
 const MAX_ATTACHMENT_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
@@ -968,7 +969,15 @@ export function issueRoutes(db: Db, storage: StorageService) {
       }
 
       const assigneeId = currentIssue.assigneeAgentId;
-      if (assigneeId) {
+      const shouldWakeAssignee = shouldWakeAssigneeOnComment({
+        actorType: actor.actorType,
+        actorAgentId: actor.agentId ?? null,
+        assigneeAgentId: assigneeId ?? null,
+        reopened,
+        interruptedRunId: interruptedRunId ?? null,
+        commentBody: req.body.body,
+      });
+      if (assigneeId && shouldWakeAssignee) {
         if (reopened) {
           wakeups.set(assigneeId, {
             source: "automation",
