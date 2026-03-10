@@ -134,6 +134,9 @@ export function issueRoutes(db: Db, storage: StorageService) {
     if (issue.status !== "in_progress" || issue.assigneeAgentId !== actorAgentId) {
       return true;
     }
+    if (opts?.allowAssigneeCommentFallback || opts?.allowAssigneePatchFallback) {
+      return true;
+    }
     const runId = requireAgentRunId(req, res);
     if (!runId) return false;
     try {
