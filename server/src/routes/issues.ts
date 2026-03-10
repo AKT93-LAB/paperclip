@@ -123,7 +123,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     req: Request,
     res: Response,
     issue: { id: string; companyId: string; status: string; assigneeAgentId: string | null },
-    opts?: { allowAssigneeCommentFallback?: boolean },
+    opts?: { allowAssigneeCommentFallback?: boolean; allowAssigneePatchFallback?: boolean },
   ) {
     if (req.actor.type !== "agent") return true;
     const actorAgentId = req.actor.agentId;
@@ -158,22 +158,33 @@ export function issueRoutes(db: Db, storage: StorageService) {
       }
       return true;
     } catch (err) {
-      if (
-        opts?.allowAssigneeCommentFallback &&
-        err instanceof HttpError &&
-        err.status === 409
-      ) {
-        logger.warn(
-          {
-            issueId: issue.id,
-            companyId: issue.companyId,
-            actorAgentId,
-            runId,
-            details: err.details,
-          },
-          "allowing assignee comment fallback despite checkout ownership conflict",
-        );
-        return true;
+      if (err instanceof HttpError && err.status === 409) {
+        if (opts?.allowAssigneeCommentFallback) {
+          logger.warn(
+            {
+              issueId: issue.id,
+              companyId: issue.companyId,
+              actorAgentId,
+              runId,
+              details: err.details,
+            },
+            "allowing assignee comment fallback despite checkout ownership conflict",
+          );
+          return true;
+        }
+        if (opts?.allowAssigneePatchFallback) {
+          logger.warn(
+            {
+              issueId: issue.id,
+              companyId: issue.companyId,
+              actorAgentId,
+              runId,
+              details: err.details,
+            },
+            "allowing assignee patch fallback despite checkout ownership conflict",
+          );
+          return true;
+        }
       }
       throw err;
     }
@@ -539,7 +550,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
         await assertCanAssignTasks(req, existing.companyId);
       }
     }
-    if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
+    if (!(await assertAgentRunCheckoutOwnership(req, res, existing, { allowAssigneePatchFallback: !assigneeWillChange }))) return;
 
     const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
     if (hiddenAtRaw !== undefined) {
