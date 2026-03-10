@@ -46,6 +46,7 @@ describe("issue checkout adoption policy", () => {
       checkoutRunId,
       executionRunId,
       actorRunId,
+      executionRunIsTerminal,
     }: {
       status: string;
       assigneeAgentId: string | null;
@@ -53,13 +54,14 @@ describe("issue checkout adoption policy", () => {
       checkoutRunId: string | null;
       executionRunId: string | null;
       actorRunId: string | null;
+      executionRunIsTerminal: boolean;
     }) => {
       return Boolean(
         actorRunId &&
           status === "in_progress" &&
           assigneeAgentId === actorAgentId &&
           checkoutRunId == null &&
-          (executionRunId == null || executionRunId === actorRunId),
+          (executionRunId == null || executionRunId === actorRunId || executionRunIsTerminal),
       );
     };
 
@@ -71,7 +73,48 @@ describe("issue checkout adoption policy", () => {
         checkoutRunId: null,
         executionRunId: "run-2",
         actorRunId: "run-1",
+        executionRunIsTerminal: false,
       }),
     ).toBe(false);
+  });
+
+  it("adopts when the leftover execution run is terminal", () => {
+    const canAdopt = ({
+      status,
+      assigneeAgentId,
+      actorAgentId,
+      checkoutRunId,
+      executionRunId,
+      actorRunId,
+      executionRunIsTerminal,
+    }: {
+      status: string;
+      assigneeAgentId: string | null;
+      actorAgentId: string;
+      checkoutRunId: string | null;
+      executionRunId: string | null;
+      actorRunId: string | null;
+      executionRunIsTerminal: boolean;
+    }) => {
+      return Boolean(
+        actorRunId &&
+          status === "in_progress" &&
+          assigneeAgentId === actorAgentId &&
+          checkoutRunId == null &&
+          (executionRunId == null || executionRunId === actorRunId || executionRunIsTerminal),
+      );
+    };
+
+    expect(
+      canAdopt({
+        status: "in_progress",
+        assigneeAgentId: "agent-1",
+        actorAgentId: "agent-1",
+        checkoutRunId: null,
+        executionRunId: "run-2",
+        actorRunId: "run-1",
+        executionRunIsTerminal: true,
+      }),
+    ).toBe(true);
   });
 });
