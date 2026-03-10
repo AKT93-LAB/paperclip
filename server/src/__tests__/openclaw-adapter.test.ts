@@ -432,6 +432,25 @@ describe("openclaw adapter execute", () => {
     expect(result.errorCode).toBe("openclaw_sse_stream_incomplete");
   });
 
+  it("fails when the stream completes with an explicit no-reply payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      sseResponse([
+        "event: response.output_text.done\n",
+        'data: {"type":"response.output_text.done","text":"No response from OpenClaw."}\n\n',
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await execute(
+      buildContext({
+        url: "https://agent.example/v1/responses",
+      }),
+    );
+
+    expect(result.exitCode).toBe(1);
+    expect(result.errorCode).toBe("openclaw_no_reply");
+  });
+
   it("fails with explicit text-required error when endpoint rejects payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "text required" }), {

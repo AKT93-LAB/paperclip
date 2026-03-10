@@ -711,6 +711,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       };
     }
 
+    const lastText = typeof consumed.lastPayload?.text === "string" ? consumed.lastPayload.text.trim() : null;
+    if (lastText && (lastText === "No response from OpenClaw." || lastText === "No reply from agent.")) {
+      return {
+        exitCode: 1,
+        signal: null,
+        timedOut: false,
+        errorMessage: lastText,
+        errorCode: "openclaw_no_reply",
+        resultJson: {
+          eventCount: consumed.eventCount,
+          terminal: consumed.terminal,
+          lastEventType: consumed.lastEventType,
+          lastData: consumed.lastData,
+          response: consumed.lastPayload ?? consumed.lastData,
+        },
+      };
+    }
+
     return {
       exitCode: 0,
       signal: null,
