@@ -198,6 +198,22 @@ type AssetMeta = {
   byteSize?: number;
 };
 
+type ArtifactPackageDoc = {
+  package_version?: string;
+  project?: string;
+  created_at?: string;
+  artifacts?: Array<{
+    id?: string;
+    role?: string;
+    kind?: string;
+    title?: string;
+    description?: string;
+    status?: string;
+  }>;
+  deliverables?: Record<string, unknown>;
+  next_steps?: string[];
+};
+
 function parseFilenameFromContentDisposition(value: string | null): string | null {
   if (!value) return null;
   const utf8Match = value.match(/filename\*=UTF-8''([^;]+)/i);
@@ -218,6 +234,25 @@ function looksRandomFilename(name: string | null | undefined): boolean {
   if (!trimmed) return true;
   const stem = trimmed.replace(/\.[^.]+$/, "");
   return /^[a-f0-9-]{12,}$/i.test(stem);
+}
+
+function parseArtifactPackageDoc(text: string | null): ArtifactPackageDoc | null {
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (!Array.isArray(parsed.artifacts)) return null;
+    if (typeof parsed.project !== "string" && typeof parsed.package_version !== "string") return null;
+    return parsed as ArtifactPackageDoc;
+  } catch {
+    return null;
+  }
+}
+
+function humanizeDeliverableKey(key: string) {
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function humanAssetLabel(meta: AssetMeta | null, assetId: string, index?: number, preferredLabel?: string): string {
@@ -349,6 +384,7 @@ function AssetPreview({ assetId, index, label: preferredLabel, summary, kind, ro
   const label = humanAssetLabel(meta, assetId, index, preferredLabel);
   const roleLabel = humanizeToken(role);
   const kindLabel = humanizeToken(kind) || humanizeToken(meta?.contentType?.split("/")[0]);
+  const artifactPackage = parseArtifactPackageDoc(textPreview);
 
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3 space-y-2">
@@ -392,11 +428,79 @@ function AssetPreview({ assetId, index, label: preferredLabel, summary, kind, ro
         <img className="w-full max-w-xl rounded" src={contentUrl} alt={label} />
       )}
 
-      {textPreview != null && (
+      {artifactPackage ? (
+        <div className="space-y-3 rounded-md bg-muted/30 p-3">
+          <div>
+            <div className="text-sm font-medium">{artifactPackage.project || label}</div>
+            <div className="text-xs text-muted-foreground">
+              {artifactPackage.package_version ? `Package v${artifactPackage.package_version}` : "Artifact package"}
+              {artifactPackage.created_at ? ` • ${new Date(artifactPackage.created_at).toLocaleString()}` : ""}
+            </div>
+          </div>
+
+          {Array.isArray(artifactPackage.artifacts) && artifactPackage.artifacts.length > 0 && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-2">Included artifacts</div>
+              <div className="space-y-2">
+                {artifactPackage.artifacts.map((artifact, idx) => (
+                  <div key={`${artifact.id ?? idx}`} className="rounded border border-border bg-background p-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-sm font-medium">{artifact.title || artifact.id || `Artifact ${idx + 1}`}</div>
+                      {artifact.role && (
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${artifactBadgeTone(artifact.role)}`}>
+                          {humanizeToken(artifact.role)}
+                        </span>
+                      )}
+                      {artifact.kind && (
+                        <span className="inline-flex items-center rounded-full border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground">
+                          {humanizeToken(artifact.kind)}
+                        </span>
+                      )}
+                    </div>
+                    {artifact.description && (
+                      <div className="mt-1 text-xs text-muted-foreground">{artifact.description}</div>
+                    )}
+                    {artifact.status && (
+                      <div className="mt-1 text-[11px] text-muted-foreground">Status: {humanizeToken(artifact.status)}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {artifactPackage.deliverables && Object.keys(artifactPackage.deliverables).length > 0 && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-2">Deliverables status</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {Object.entries(artifactPackage.deliverables).map(([key, value]) => (
+                  <div key={key} className="rounded border border-border bg-background px-2 py-1.5 text-xs flex items-center justify-between gap-2">
+                    <span>{humanizeDeliverableKey(key)}</span>
+                    <span className={value === true ? "text-green-600 dark:text-green-400 font-medium" : value === false ? "text-muted-foreground" : "text-foreground"}>
+                      {typeof value === "boolean" ? (value ? "Yes" : "No") : String(value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {Array.isArray(artifactPackage.next_steps) && artifactPackage.next_steps.length > 0 && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Next steps</div>
+              <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">
+                {artifactPackage.next_steps.map((step, idx) => (
+                  <li key={idx}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      ) : textPreview != null ? (
         <pre className="text-xs whitespace-pre-wrap break-words max-h-64 overflow-y-auto bg-muted/40 p-2 rounded">
           {textPreview}
         </pre>
-      )}
+      ) : null}
 
       {!error && !ct.startsWith("video/") && !ct.startsWith("image/") && textPreview == null && (
         <div className="text-xs text-muted-foreground">Preview not available (open to view).</div>
