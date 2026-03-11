@@ -19,6 +19,7 @@ import {
 } from "../services/index.js";
 import { syncLinkedIssuesForApprovalLifecycle } from "../services/approval-issue-lifecycle.js";
 import { normalizeApprovalPayloadArtifacts } from "../services/approval-artifacts.js";
+import { assertApprovalPayloadSatisfiesLinkedIssueRequirements } from "../services/approval-artifact-requirements.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
 
@@ -81,6 +82,14 @@ export function approvalRoutes(db: Db) {
     if (approvalInput.type === "action_execution" && normalizedPayload && typeof normalizedPayload === "object") {
       normalizedPayload = normalizeApprovalPayloadArtifacts(normalizedPayload as Record<string, unknown>);
     }
+
+    await assertApprovalPayloadSatisfiesLinkedIssueRequirements({
+      db,
+      companyId,
+      approvalType: approvalInput.type,
+      payload: normalizedPayload as Record<string, unknown>,
+      linkedIssueIds: uniqueIssueIds,
+    });
 
     const actor = getActorInfo(req);
     const approval = await svc.create(companyId, {
@@ -428,7 +437,10 @@ export function approvalRoutes(db: Db) {
       return;
     }
 
-    const normalizedPayload = req.body.payload
+    const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(id);
+    const linkedIssueIds = linkedIssues.map((issue) => issue.id);
+
+    let normalizedPayload = req.body.payload
       ? existing.type === "hire_agent"
         ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
             existing.companyId,
@@ -437,9 +449,21 @@ export function approvalRoutes(db: Db) {
           )
         : req.body.payload
       : undefined;
+
+    if (existing.type === "action_execution" && normalizedPayload && typeof normalizedPayload === "object") {
+      normalizedPayload = normalizeApprovalPayloadArtifacts(normalizedPayload as Record<string, unknown>);
+    }
+
+    await assertApprovalPayloadSatisfiesLinkedIssueRequirements({
+      db,
+      companyId: existing.companyId,
+      approvalType: existing.type,
+      payload: (normalizedPayload ?? existing.payload) as Record<string, unknown>,
+      linkedIssueIds,
+    });
+
     const approval = await svc.resubmit(id, normalizedPayload);
     const actor = getActorInfo(req);
-    const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
     await syncLinkedIssuesForApprovalLifecycle(db, {
       approval,
       linkedIssues,
