@@ -122,5 +122,69 @@ This is probably too small for CEO/PM/research work, but Anton still wants MiniM
 4. Then continue with AKT-49 and AKT-50
 5. After stability improves, selectively adopt upstream infra fixes from `origin/master` without overwriting approval/artifact product behavior
 
+## Update — 2026-03-11
+
+### Additional commits landed after the original handoff
+- `0fcb2a5` — Cherry-pick safe upstream infra fixes
+- `0abcc9e` — Cherry-pick backlog wake and agent dedupe fixes
+- `0012273` — Reset stale and recovery task sessions before issue runs
+- `5499265` — Allow assignee runs to adopt in-progress issue locks
+- `2cb5f30` — Adopt stale execution locks for assignee issue runs
+- `977f5c1` — Allow assignee comments despite stale checkout conflicts
+- `edf10c6` — Log issue comment ownership conflict details
+- `49ba6cf` — Allow assignee patch fallback on own in-progress issues
+- `670bd95` — Skip checkout ownership for own issue comments and updates
+- `ca040d0` — Log issue comment mutation conflicts
+- `c5f293f` — Direct-post agent comments on own assigned issues
+- `a6a6888` — Persist successful agent run replies back to issues
+- `fe7d888` — Fix issue service import for run reply fallback
+
+### What changed materially
+- Route/ownership conflicts around same-assignee issue maintenance were significantly relaxed.
+- Worker MiniMax context budget was raised to **65536** while keeping `MiniMax-M2.5` + high thinking.
+- Safe upstream infrastructure fixes are now part of this branch.
+
+### What is still not solved
+The TikTok starter flow is **still blocked** at the runtime layer.
+
+Current live issue state:
+- `AKT-46` — in progress, 1 comment
+- `AKT-47` — in progress, 1 comment
+- `AKT-48` — in progress, 0 comments
+- `AKT-49` — backlog
+- `AKT-50` — backlog
+
+Current dominant failures are:
+- `openclaw_no_reply`
+- `openclaw_request_failed` (`fetch failed`)
+
+The old `ctx=16384` starvation problem was real and is now gone. However, the worker/gateway still often emits the synthetic terminal payload:
+- `No response from OpenClaw.`
+
+### Best current root-cause direction
+The remaining blocker is no longer mainly Paperclip issue route logic.
+It is now primarily the **OpenClaw worker / gateway result finalization path** for embedded agent runs.
+
+The next session should continue there:
+1. inspect the worker path that emits `No response from OpenClaw.`
+2. inspect embedded run payload/result finalization
+3. only after runtime fix, retry AKT-48 and then AKT-49/50
+
+### Worker config reminder
+Current worker config in `/var/lib/openclaw-paperclip-worker/openclaw.json` should remain:
+- `MiniMax-M2.5`
+- `thinkingDefault: high`
+- `contextTokens: 65536`
+
+Do not silently switch Paperclip agents to GPT-5.4.
+
+### Repo note
+There are untracked debug scripts right now:
+- `server/scripts/debug-heartbeat.ts`
+- `server/scripts/invoke-agent.ts`
+- `server/scripts/repro-openclaw-exec.ts`
+
+Decide deliberately next session whether to keep or delete them.
+
 ## Reminder
 If you feel tempted to do a broad upstream merge, don’t. Preserve the product layer first.
