@@ -741,6 +741,10 @@ export function issueService(db: Db) {
           .from(issueAttachments)
           .where(eq(issueAttachments.issueId, id));
 
+        await tx.delete(issueReadStates).where(eq(issueReadStates.issueId, id));
+        await tx.delete(issueComments).where(eq(issueComments.issueId, id));
+        await tx.delete(issueAttachments).where(eq(issueAttachments.issueId, id));
+
         const removedIssue = await tx
           .delete(issues)
           .where(eq(issues.id, id))
