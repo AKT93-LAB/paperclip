@@ -99,6 +99,20 @@ function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
 }
 
+export function extractRunReplyText(run: Pick<typeof heartbeatRuns.$inferSelect, "resultJson">) {
+  const resultJson = parseObject(run.resultJson);
+  const response = parseObject(resultJson.response);
+  const text =
+    readNonEmptyString(response.text) ??
+    readNonEmptyString(resultJson.text) ??
+    readNonEmptyString(resultJson.summary);
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  if (trimmed === "No response from OpenClaw." || trimmed === "No reply from agent.") return null;
+  return trimmed;
+}
+
 export function resolveRuntimeSessionParamsForWorkspace(input: {
   agentId: string;
   previousSessionParams: Record<string, unknown> | null;
@@ -982,17 +996,6 @@ export function heartbeatService(db: Db) {
     );
 
     return true;
-  }
-
-  function extractRunReplyText(run: typeof heartbeatRuns.$inferSelect) {
-    const resultJson = parseObject(run.resultJson);
-    const response = parseObject(resultJson.response);
-    const text = readNonEmptyString(response.text) ?? readNonEmptyString(resultJson.summary);
-    if (!text) return null;
-    const trimmed = text.trim();
-    if (!trimmed) return null;
-    if (trimmed === "No response from OpenClaw." || trimmed === "No reply from agent.") return null;
-    return trimmed;
   }
 
   async function maybePersistRunReplyAsIssueComment(
