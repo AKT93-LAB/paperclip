@@ -23,7 +23,7 @@ import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { secretService } from "./secrets.js";
-import { createIssueService } from "./issues.js";
+import { issueService } from "./issues.js";
 import { logActivity } from "./activity-log.js";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 
@@ -431,7 +431,7 @@ function resolveNextSessionState(input: {
 export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
-  const issueSvc = createIssueService(db);
+  const issueSvc = issueService(db);
 
   async function getAgent(agentId: string) {
     return db
