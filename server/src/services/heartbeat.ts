@@ -3,6 +3,7 @@ import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
+  activityLog,
   agents,
   agentRuntimeState,
   agentTaskSessions,
@@ -22,6 +23,8 @@ import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { secretService } from "./secrets.js";
+import { createIssueService } from "./issues.js";
+import { logActivity } from "./activity-log.js";
 import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
@@ -428,6 +431,7 @@ function resolveNextSessionState(input: {
 export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
+  const issueSvc = createIssueService(db);
 
   async function getAgent(agentId: string) {
     return db
@@ -975,6 +979,83 @@ export function heartbeatService(db: Db) {
         taskKey,
       },
       "queued automatic retry after OpenClaw no-reply failure",
+    );
+
+    return true;
+  }
+
+  function extractRunReplyText(run: typeof heartbeatRuns.$inferSelect) {
+    const resultJson = parseObject(run.resultJson);
+    const response = parseObject(resultJson.response);
+    const text = readNonEmptyString(response.text) ?? readNonEmptyString(resultJson.summary);
+    if (!text) return null;
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    if (trimmed === "No response from OpenClaw." || trimmed === "No reply from agent.") return null;
+    return trimmed;
+  }
+
+  async function maybePersistRunReplyAsIssueComment(
+    agent: typeof agents.$inferSelect,
+    run: typeof heartbeatRuns.$inferSelect,
+  ) {
+    if (run.status !== "succeeded") return false;
+
+    const contextSnapshot = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(contextSnapshot.issueId);
+    if (!issueId) return false;
+
+    const replyText = extractRunReplyText(run);
+    if (!replyText) return false;
+
+    const existingActivity = await db
+      .select({ id: activityLog.id })
+      .from(activityLog)
+      .where(
+        and(
+          eq(activityLog.runId, run.id),
+          eq(activityLog.action, "issue.comment_added"),
+          eq(activityLog.entityType, "issue"),
+          eq(activityLog.entityId, issueId),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+
+    if (existingActivity) return false;
+
+    const issue = await issueSvc.getById(issueId);
+    if (!issue) return false;
+
+    const comment = await issueSvc.addComment(issueId, replyText, {
+      agentId: agent.id,
+    });
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: "agent",
+      actorId: agent.id,
+      agentId: agent.id,
+      runId: run.id,
+      action: "issue.comment_added",
+      entityType: "issue",
+      entityId: issueId,
+      details: {
+        commentId: comment.id,
+        bodySnippet: replyText.slice(0, 120),
+        source: "run_result_fallback",
+      },
+    });
+
+    logger.info(
+      {
+        companyId: issue.companyId,
+        agentId: agent.id,
+        runId: run.id,
+        issueId,
+        commentId: comment.id,
+      },
+      "persisted successful run reply as issue comment",
     );
 
     return true;
@@ -1586,6 +1667,7 @@ export function heartbeatService(db: Db) {
           await maybeApplyTimeoutCircuitBreaker(agent, finalizedRun);
         }
         await maybeRecoverNoReplyRun(agent, finalizedRun);
+        await maybePersistRunReplyAsIssueComment(agent, finalizedRun);
         await updateRuntimeState(agent, finalizedRun, adapterResult, {
           legacySessionId: nextSessionState.legacySessionId,
         });
