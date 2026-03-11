@@ -191,45 +191,6 @@ export function issueRoutes(db: Db, storage: StorageService) {
       }
       throw err;
     }
--    if (ownership.adoptedFromRunId) {
--      const actor = getActorInfo(req);
--      await logActivity(db, {
--        companyId: issue.companyId,
--        actorType: actor.actorType,
--        actorId: actor.actorId,
--        agentId: actor.agentId,
--        runId: actor.runId,
--        action: "issue.checkout_lock_adopted",
--        entityType: "issue",
--        entityId: issue.id,
--        details: {
--          previousCheckoutRunId: ownership.adoptedFromRunId,
--          checkoutRunId: runId,
--          reason: "stale_checkout_run",
--        },
--      });
--    }
--    return true;
-  }
-    if (ownership.adoptedFromRunId) {
-      const actor = getActorInfo(req);
-      await logActivity(db, {
-        companyId: issue.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        action: "issue.checkout_lock_adopted",
-        entityType: "issue",
-        entityId: issue.id,
-        details: {
-          previousCheckoutRunId: ownership.adoptedFromRunId,
-          checkoutRunId: runId,
-          reason: "stale_checkout_run",
-        },
-      });
-    }
-    return true;
   }
 
   async function normalizeIssueIdentifier(rawId: string): Promise<string> {
@@ -1139,7 +1100,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
       const assigneeId = currentIssue.assigneeAgentId;
       const shouldWakeAssignee = shouldWakeAssigneeOnComment({
-        actorType: actor.actorType,
+        actorType: actor.actorType === "user" ? "board" : "agent",
         actorAgentId: actor.agentId ?? null,
         assigneeAgentId: assigneeId ?? null,
         reopened,

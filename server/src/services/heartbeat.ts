@@ -948,7 +948,7 @@ export function heartbeatService(db: Db) {
 
     await enqueueWakeup(agent.id, {
       source: run.invocationSource as "timer" | "assignment" | "on_demand" | "automation",
-      triggerDetail: run.triggerDetail as "manual" | "ping" | "callback" | "system" | null,
+      triggerDetail: (run.triggerDetail ?? undefined) as "manual" | "ping" | "callback" | "system" | undefined,
       reason: "openclaw_no_reply_recovery",
       payload: {
         issueId,

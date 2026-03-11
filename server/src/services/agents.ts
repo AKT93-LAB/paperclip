@@ -24,6 +24,17 @@ function createToken() {
   return `pcp_${randomBytes(24).toString("hex")}`;
 }
 
+function deduplicateAgentName(candidateName: string, existingAgents: Array<Pick<AgentShortnameRow, "name">>) {
+  const base = candidateName.trim();
+  if (!existingAgents.some((a) => a.name === base)) return base;
+  for (let i = 2; i < 1000; i++) {
+    const next = `${base} (${i})`;
+    if (!existingAgents.some((a) => a.name === next)) return next;
+  }
+  // Fallback (should never happen): make it unique.
+  return `${base} (${randomBytes(2).toString("hex")})`;
+}
+
 const CONFIG_REVISION_FIELDS = [
   "name",
   "role",
