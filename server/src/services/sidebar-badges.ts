@@ -3,7 +3,7 @@ import type { Db } from "@paperclipai/db";
 import { agents, approvals, heartbeatRuns } from "@paperclipai/db";
 import type { SidebarBadges } from "@paperclipai/shared";
 
-const ACTIONABLE_APPROVAL_STATUSES = ["pending", "revision_requested"];
+const ACTIONABLE_APPROVAL_STATUSES = ["pending"];
 const FAILED_HEARTBEAT_STATUSES = ["failed", "timed_out"];
 
 export function sidebarBadgeService(db: Db) {

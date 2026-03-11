@@ -102,6 +102,32 @@ export function HumanDecisionPayload({ payload }: { payload: Record<string, unkn
   const recommendation = getString(payload.recommendation || payload.proposal || payload.recommended);
   const rationale = getString(payload.rationale || payload.reasoning);
   const options = getOptions(payload);
+
+  const artifacts: ArtifactRef[] = Array.isArray(payload.artifacts)
+    ? (payload.artifacts as unknown[])
+        .map(normalizeArtifactRef)
+        .filter((item): item is ArtifactRef => Boolean(item))
+    : [];
+
+  const previewAssets: ArtifactRef[] = Array.isArray(payload.previewAssets)
+    ? (payload.previewAssets as unknown[])
+        .map(normalizeArtifactRef)
+        .filter((item): item is ArtifactRef => Boolean(item))
+        .map((item) => ({ ...item, role: item.role ?? "preview" }))
+    : [];
+
+  const fallbackPreviewAssetIds: string[] = Array.isArray(payload.previewAssetIds)
+    ? (payload.previewAssetIds as any[]).map((x) => (typeof x === "string" ? x : "")).filter(Boolean)
+    : [];
+
+  const normalizedArtifacts: ArtifactRef[] = artifacts.length > 0
+    ? artifacts
+    : previewAssets.length > 0
+      ? previewAssets
+      : fallbackPreviewAssetIds.map((assetId) => ({ assetId, role: "preview" }));
+
+  const sectionLabel = artifactSectionLabel(normalizedArtifacts);
+
   return (
     <div className="mt-3 space-y-2 text-sm">
       {question && (
@@ -136,7 +162,25 @@ export function HumanDecisionPayload({ payload }: { payload: Record<string, unkn
           </div>
         </div>
       )}
-      {!question && !recommendation && options.length === 0 && (
+      {normalizedArtifacts.length > 0 && (
+        <div>
+          <div className="text-xs text-muted-foreground">{sectionLabel}</div>
+          <div className="mt-2 space-y-3">
+            {normalizedArtifacts.map((item, index) => (
+              <AssetPreview
+                key={`${item.assetId}:${index}`}
+                assetId={item.assetId}
+                index={index}
+                label={item.label}
+                summary={item.summary}
+                kind={item.kind}
+                role={item.role}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      {!question && !recommendation && options.length === 0 && normalizedArtifacts.length === 0 && (
         <pre className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground overflow-x-auto max-h-48">
           {JSON.stringify(payload, null, 2)}
         </pre>

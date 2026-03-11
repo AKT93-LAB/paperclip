@@ -44,7 +44,7 @@ import type { HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const RECENT_ISSUES_LIMIT = 100;
 const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
-const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
+const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending"]);
 
 type InboxTab = "new" | "all";
 type InboxCategoryFilter =

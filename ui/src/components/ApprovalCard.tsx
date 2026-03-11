@@ -69,7 +69,7 @@ export function ApprovalCard({
       )}
 
       {/* Actions */}
-      {(approval.status === "pending" || approval.status === "revision_requested") && (
+      {approval.status === "pending" && (
         <div className="flex flex-wrap gap-2 mt-4 pt-3 border-t border-border">
           {approval.type === "human_decision" && onApproveOption && Array.isArray((approval.payload as any)?.options)
             ? (((approval.payload as any).options as any[]) ?? [])
