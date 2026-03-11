@@ -451,7 +451,7 @@ describe("openclaw adapter execute", () => {
     expect(result.errorCode).toBe("openclaw_no_reply");
   });
 
-  it("forwards model, thinking, contextTokens, and routing profile to OpenClaw responses", async () => {
+  it("forwards model plus Paperclip routing hints to OpenClaw responses metadata", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       sseResponse([
         "event: response.output_text.done\n",
@@ -463,12 +463,10 @@ describe("openclaw adapter execute", () => {
     await execute(
       buildContext({
         url: "https://agent.example/v1/responses",
-        config: {
-          model: "minimax/MiniMax-M2.5",
-          thinking: "high",
-          contextTokens: 65536,
-          routingProfile: "deep_planning",
-        },
+        model: "minimax/MiniMax-M2.5",
+        thinking: "high",
+        contextTokens: 65536,
+        routingProfile: "deep_planning",
       }),
     );
 
@@ -476,9 +474,9 @@ describe("openclaw adapter execute", () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     const body = JSON.parse(String(init.body));
     expect(body.model).toBe("minimax/MiniMax-M2.5");
-    expect(body.thinking).toBe("high");
-    expect(body.contextTokens).toBe(65536);
-    expect(body.routingProfile).toBe("deep_planning");
+    expect(body.thinking).toBeUndefined();
+    expect(body.contextTokens).toBeUndefined();
+    expect(body.routingProfile).toBeUndefined();
     expect(body.metadata.paperclip_routing_profile).toBe("deep_planning");
     expect(body.metadata.paperclip_target_context_tokens).toBe("65536");
     expect(body.metadata.paperclip_target_thinking).toBe("high");

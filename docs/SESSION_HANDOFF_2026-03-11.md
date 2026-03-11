@@ -2,7 +2,19 @@
 
 ## Summary of Work Done
 
-Fixed the dominant `openclaw_no_reply` failure mode that was causing all CEO agent runs to fail.
+Fixed the dominant `openclaw_no_reply` failure mode that was causing CEO/PM runs to fail, then fixed the next-level autonomy bugs that were still stalling the TikTok Growth Engine project.
+
+## Autonomy Standard (Important)
+
+If Nova has to keep manually nudging issues, Paperclip is still broken.
+
+The intended operating model is:
+- agents create real approvals / comments / status transitions themselves
+- PM detects structural blockers, not just status labels
+- CEO mutates state when the issue requires it
+- Anton is only pulled in for actual decisions/approvals
+
+Do **not** mistake a successful manual rescue for a solved system. Manual rescues are diagnostics only.
 
 ## Root Causes Identified & Fixed
 
@@ -26,15 +38,32 @@ Fixed the dominant `openclaw_no_reply` failure mode that was causing all CEO age
 
 All future runs start with fresh, clean sessions.
 
-### 3. max_output_tokens Too Low (SECONDARY CAUSE)
-**Problem:** CEO agent had `max_output_tokens: 1200`. All other agents had similarly tiny limits. At 1200 tokens output, the agent could barely reason + make tool calls + reply.
+### 3. MiniMax/OpenClaw Request Schema Mismatch (SECONDARY CAUSE)
+**Problem:** Paperclip tuning attempted to send MiniMax `thinking` + `contextTokens` as top-level `/v1/responses` fields. The installed OpenClaw worker rejected them with `invalid_request_error: Unrecognized keys: "thinking", "contextTokens"`.
 
-**Fix:** Updated in DB via SQL:
-- CEO, PM, CreativeDirector, TikTokPublisher, Research, TrendStrategist → 8192
-- FoundingEngineer, DevOps, Maintenance, QA → 4096
-- PM-Fast, Maintenance-Fast, QA-Fast, Research-Fast → 2048
+This created a new failure mode: Paperclip looked tuned for MiniMax high thinking, but actual wakes failed before doing any work.
 
-### 4. CEO "EXIT SILENTLY" Instructions
+**Fix:**
+- Removed invalid top-level `thinking` / `contextTokens` keys from live Paperclip DB config so wakes stop crashing
+- Patched `packages/adapters/openclaw/src/server/execute.ts` to strip unsupported top-level keys from the OpenResponses request body
+- Preserved routing hints in metadata only:
+  - `paperclip_routing_profile`
+  - `paperclip_target_context_tokens`
+  - `paperclip_target_thinking`
+- Updated `server/src/__tests__/openclaw-adapter.test.ts` to assert the supported behavior
+
+### 4. Fake Approval / Fake Blocker Narration
+**Problem:** CEO was sometimes narrating state instead of mutating state. Example: it said AKT-46 was "awaiting approval" even though **no approval object existed in the DB**. It also hallucinated "run lock conflict" on AKT-48 while the issue had no live execution lock.
+
+**Fix:**
+- Updated CEO prompt in DB to require real Paperclip API mutations via `exec` + `curl`
+- Added explicit truth rules:
+  - never claim approval exists unless fetched/created
+  - never claim lock conflict unless lock fields exist
+  - stale wakes on owned incomplete issues must continue the work
+- Updated PM prompt in DB to detect structural blockers (missing approvals, stale in-progress issues, false blockers) instead of status-only summaries
+
+### 5. CEO "EXIT SILENTLY" Instructions
 **Problem:** CEO instructions said "EXIT SILENTLY (no comment, no mentions)" for informational wake events. Combined with OpenClaw's NO_REPLY behavior, this caused the agent to literally return NO_REPLY.
 
 **Fix:** Updated CEO `input` and `instructions` in DB to:
@@ -43,27 +72,35 @@ All future runs start with fresh, clean sessions.
 
 ## Verification
 
-Runs at 2026-03-11 10:07 UTC succeeded for AKT-46 and AKT-47:
-- AKT-47: "No action taken: issue_stale wake for stuck issue AKT-47. Already delivered approval map; issue requires manual closure due to persistent ownership conflict."
-- AKT-46: succeeded
-- AKT-48: stuck detector expected ~10:17-10:27
+### Early verification
+Runs at 2026-03-11 10:07 UTC succeeded for AKT-46 and AKT-47 after the BOOTSTRAP/session cleanup.
+
+### Later verification (actual project movement)
+- A real `human_decision` approval was created for **AKT-46**: `02a8571e-efa5-4031-b231-061876be7375`
+- Approval status later became **approved**
+- **AKT-46** advanced from `in_progress` → `in_review` → `done`
+- Adapter regression test now passes after the OpenResponses payload fix:
+  - `pnpm test:run server/src/__tests__/openclaw-adapter.test.ts`
+
+This proves the system can again create real objects and move issue state, not just narrate progress.
 
 ## Current Issue State
 
 | Issue | Identifier | Status | Notes |
 |-------|------------|--------|-------|
-| AKT-46 | Define project objective, constraints, and success metrics | in_progress | CEO running, should make progress |
-| AKT-47 | Design approval map for this project | in_progress | CEO says "requires manual closure due to ownership conflict" — needs Anton's review |
-| AKT-48 | Set up artifact package contract | in_progress | CEO running, should make progress |
-| AKT-49 | Create first reviewable work package | backlog | CEO assigned, not started |
-| AKT-50 | Create weekly learning loop | backlog | CEO assigned, not started |
-| AKT-51 | [INBOX] Human Decisions & Approvals | todo | Unassigned — needs review |
+| AKT-46 | Define project objective, constraints, and success metrics | done | Real approval created and approved; issue completed properly |
+| AKT-47 | Design approval map for this project | in_progress | Deliverable exists, but issue still needs proper autonomous close/advance logic |
+| AKT-48 | Set up artifact package contract | in_progress | Still active blocker; previous fake “lock conflict” was hallucinated |
+| AKT-49 | Create first reviewable work package | backlog | Waiting on AKT-47/48 to truly finish |
+| AKT-50 | Create weekly learning loop | backlog | Downstream |
+| AKT-51 | [INBOX] Human Decisions & Approvals | todo | Anton confirmed there were no pending human approvals when the system claimed otherwise |
 
 ## What Still Needs Attention
 
-1. **AKT-47** — CEO says it has an ownership conflict requiring manual closure. Anton should review this issue and close it or resolve the conflict.
-2. **AKT-51** — Human decisions inbox. Check if there are pending approvals.
-3. **Preventing regression** — The BOOTSTRAP.md fix is in the committed Docker image (`openclaw:paperclip-worker`). If the image is rebuilt from source (via `openclaw docker update` or similar), BOOTSTRAP.md will NOT be re-added (it wasn't in the original image either — it was somehow created in the container at runtime). But monitor for this.
+1. **AKT-47** — close or advance it autonomously based on the already-delivered approval map. Do not require Anton unless a real new approval is needed.
+2. **AKT-48** — finish the artifact package contract issue; this is the main remaining blocker before AKT-49 can start.
+3. **Systemic autonomy** — keep fixing Paperclip so PM/CEO do not require manual rescue runs from Nova. If a future step requires babysitting, treat that as a Paperclip bug, not success.
+4. **Preventing regression** — keep the BOOTSTRAP/session cleanup lesson plus the OpenResponses payload lesson in mind. The worker image and adapter code must stay aligned.
 
 ## Architecture Notes
 
@@ -75,4 +112,11 @@ Runs at 2026-03-11 10:07 UTC succeeded for AKT-46 and AKT-47:
 - Stuck detector cadence: fires every ~20 min for `in_progress` issues with no recent progress
 
 ## openclaw_request_failed (fetch failed)
-These `fetch failed` errors occurred at 09:11, 09:22, 09:28 UTC. Likely transient during worker startup or brief network blip. No persistent failure observed after 09:28. Monitor.
+Earlier `fetch failed` errors around 09:11 / 09:22 / 09:28 UTC looked transient.
+
+A later class of failures turned out to be **request schema errors**, not infrastructure flakiness:
+- MiniMax tuning inserted unsupported top-level OpenResponses keys (`thinking`, `contextTokens`)
+- the worker rejected them before agent execution
+- Paperclip then looked "stuck" even though the root cause was malformed adapter payloads
+
+Lesson: when tuning Paperclip/OpenClaw, validate against the **installed worker's** accepted `/v1/responses` schema, not just assumptions from routing config.

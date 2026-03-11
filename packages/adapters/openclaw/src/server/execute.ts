@@ -580,10 +580,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : config.contextTokens,
     NaN,
   );
+  const openResponsesPayloadTemplate = isOpenResponses
+    ? Object.fromEntries(
+      Object.entries(payloadTemplate).filter(
+        ([key]) => key !== "thinking" && key !== "contextTokens" && key !== "routingProfile",
+      ),
+    )
+    : payloadTemplate;
 
   const paperclipBody: Record<string, unknown> = isOpenResponses
     ? {
-      ...payloadTemplate,
+      ...openResponsesPayloadTemplate,
       stream: true,
       model: configuredModel,
       input: openResponsesInput,
