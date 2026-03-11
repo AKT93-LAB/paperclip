@@ -84,6 +84,23 @@ Runs at 2026-03-11 10:07 UTC succeeded for AKT-46 and AKT-47 after the BOOTSTRAP
 
 This proves the system can again create real objects and move issue state, not just narrate progress.
 
+### New long-term code guardrails added after that verification
+- `server/src/routes/approvals.ts` now syncs linked issue lifecycle automatically when approvals are:
+  - created
+  - approved
+  - rejected
+  - revision_requested
+  - resubmitted
+- `server/src/services/approval-issue-lifecycle.ts` is now the shared server-side rule set for approval-driven issue progression:
+  - human_decision created/resubmitted: `in_progress` → `in_review`
+  - human_decision approved: `in_review`/`in_progress` → `done`
+  - human_decision rejected/revision_requested: `in_review` → `in_progress`
+  - action_execution approvals update linked issue state based on execution result (`done`/`blocked`)
+- `server/src/services/agents.ts` now normalizes OpenClaw adapter config on create/update so unsupported payloadTemplate keys (`thinking`, `contextTokens`, `routingProfile`) are stripped before persistence
+- Added regression tests:
+  - `server/src/__tests__/approval-issue-lifecycle.test.ts`
+  - `server/src/__tests__/agent-config-normalization.test.ts`
+
 ## Current Issue State
 
 | Issue | Identifier | Status | Notes |

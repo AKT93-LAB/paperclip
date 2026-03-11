@@ -17,6 +17,7 @@ import {
   logActivity,
   secretService,
 } from "../services/index.js";
+import { syncLinkedIssuesForApprovalLifecycle } from "../services/approval-issue-lifecycle.js";
 import { normalizeApprovalPayloadArtifacts } from "../services/approval-artifacts.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
@@ -95,10 +96,18 @@ export function approvalRoutes(db: Db) {
       updatedAt: new Date(),
     });
 
+    let linkedIssues: Awaited<ReturnType<typeof issueApprovalsSvc.listIssuesForApproval>> = [];
     if (uniqueIssueIds.length > 0) {
       await issueApprovalsSvc.linkManyForApproval(approval.id, uniqueIssueIds, {
         agentId: actor.agentId,
         userId: actor.actorType === "user" ? actor.actorId : null,
+      });
+      linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
+      await syncLinkedIssuesForApprovalLifecycle(db, {
+        approval,
+        linkedIssues,
+        trigger: "created",
+        actor,
       });
     }
 
@@ -181,6 +190,14 @@ export function approvalRoutes(db: Db) {
         };
       }
     }
+
+    await syncLinkedIssuesForApprovalLifecycle(db, {
+      approval,
+      linkedIssues,
+      trigger: "approved",
+      actor: { actorType: "user", actorId: req.actor.userId ?? "board", runId: req.actor.runId ?? null },
+      executionResult,
+    });
 
     await logActivity(db, {
       companyId: approval.companyId,
@@ -273,6 +290,13 @@ export function approvalRoutes(db: Db) {
     const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
     const linkedIssueIds = linkedIssues.map((issue) => issue.id);
     const primaryIssueId = linkedIssueIds[0] ?? null;
+
+    await syncLinkedIssuesForApprovalLifecycle(db, {
+      approval,
+      linkedIssues,
+      trigger: "rejected",
+      actor: { actorType: "user", actorId: req.actor.userId ?? "board", runId: req.actor.runId ?? null },
+    });
 
     await logActivity(db, {
       companyId: approval.companyId,
@@ -368,6 +392,13 @@ export function approvalRoutes(db: Db) {
         req.body.decidedByUserId ?? "board",
         req.body.decisionNote,
       );
+      const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
+      await syncLinkedIssuesForApprovalLifecycle(db, {
+        approval,
+        linkedIssues,
+        trigger: "revision_requested",
+        actor: { actorType: "user", actorId: req.actor.userId ?? "board", runId: req.actor.runId ?? null },
+      });
 
       await logActivity(db, {
         companyId: approval.companyId,
@@ -408,6 +439,13 @@ export function approvalRoutes(db: Db) {
       : undefined;
     const approval = await svc.resubmit(id, normalizedPayload);
     const actor = getActorInfo(req);
+    const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
+    await syncLinkedIssuesForApprovalLifecycle(db, {
+      approval,
+      linkedIssues,
+      trigger: "resubmitted",
+      actor,
+    });
     await logActivity(db, {
       companyId: approval.companyId,
       actorType: actor.actorType,

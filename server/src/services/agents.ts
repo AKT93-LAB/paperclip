@@ -65,6 +65,28 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function normalizeAdapterConfigForPersistence(
+  adapterType: string | null | undefined,
+  adapterConfig: unknown,
+): typeof agents.$inferInsert["adapterConfig"] {
+  if (!isPlainRecord(adapterConfig)) return {};
+  if (adapterType !== "openclaw") return adapterConfig;
+
+  const normalized = { ...adapterConfig };
+  const payloadTemplate = isPlainRecord(normalized.payloadTemplate)
+    ? { ...normalized.payloadTemplate }
+    : null;
+
+  if (payloadTemplate) {
+    delete payloadTemplate.thinking;
+    delete payloadTemplate.contextTokens;
+    delete payloadTemplate.routingProfile;
+    normalized.payloadTemplate = payloadTemplate;
+  }
+
+  return normalized;
+}
+
 function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -143,7 +165,10 @@ function configPatchFromSnapshot(snapshot: unknown): Partial<typeof agents.$infe
         ? snapshot.capabilities
         : null,
     adapterType: snapshot.adapterType,
-    adapterConfig: isPlainRecord(snapshot.adapterConfig) ? snapshot.adapterConfig : {},
+    adapterConfig: normalizeAdapterConfigForPersistence(
+      snapshot.adapterType,
+      isPlainRecord(snapshot.adapterConfig) ? snapshot.adapterConfig : {},
+    ),
     runtimeConfig: isPlainRecord(snapshot.runtimeConfig) ? snapshot.runtimeConfig : {},
     budgetMonthlyCents: Math.max(0, Math.floor(snapshot.budgetMonthlyCents)),
     metadata: isPlainRecord(snapshot.metadata) || snapshot.metadata === null ? snapshot.metadata : null,
@@ -275,6 +300,12 @@ export function agentService(db: Db) {
       const role = (data.role ?? existing.role) as string;
       normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
     }
+    if (data.adapterConfig !== undefined) {
+      normalizedPatch.adapterConfig = normalizeAdapterConfigForPersistence(
+        (data.adapterType ?? existing.adapterType) as string,
+        data.adapterConfig,
+      );
+    }
 
     const shouldRecordRevision = Boolean(options?.recordRevision) && hasConfigPatchFields(normalizedPatch);
     const beforeConfig = shouldRecordRevision ? buildConfigSnapshot(existing) : null;
@@ -333,9 +364,17 @@ export function agentService(db: Db) {
 
       const role = data.role ?? "general";
       const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
+      const normalizedAdapterConfig = normalizeAdapterConfigForPersistence(data.adapterType, data.adapterConfig);
       const created = await db
         .insert(agents)
-        .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions })
+        .values({
+          ...data,
+          adapterConfig: normalizedAdapterConfig,
+          name: uniqueName,
+          companyId,
+          role,
+          permissions: normalizedPermissions,
+        })
         .returning()
         .then((rows) => rows[0]);
 
