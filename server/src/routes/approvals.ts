@@ -21,6 +21,7 @@ import { syncLinkedIssuesForApprovalLifecycle } from "../services/approval-issue
 import { normalizeApprovalPayloadArtifacts } from "../services/approval-artifacts.js";
 import { assertApprovalPayloadSatisfiesLinkedIssueRequirements } from "../services/approval-artifact-requirements.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { agentService } from "../services/agents.js";
 import { redactEventPayload } from "../redaction.js";
 
 function redactApprovalPayload<T extends { type?: string; payload: Record<string, unknown> }>(approval: T): T {
@@ -38,6 +39,7 @@ export function approvalRoutes(db: Db) {
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
+  const agentsSvc = agentService(db);
   const actionExecutions = actionExecutionService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
@@ -287,6 +289,37 @@ export function approvalRoutes(db: Db) {
           },
         });
       }
+    }
+
+    // Nudge PM immediately after an approval is resolved so the pipeline advances without waiting for a timer.
+    try {
+      const agents = await agentsSvc.list(approval.companyId);
+      const pm = agents.find((agent) => agent.name === "PM");
+      if (pm) {
+        await heartbeat.wakeup(pm.id, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "approval_pipeline_tick",
+          requestedByActorType: "user",
+          requestedByActorId: req.actor.userId ?? "board",
+          payload: {
+            approvalId: approval.id,
+            approvalStatus: approval.status,
+            issueId: primaryIssueId,
+            issueIds: linkedIssueIds,
+          },
+          contextSnapshot: {
+            source: "approval.pipeline_tick",
+            approvalId: approval.id,
+            approvalStatus: approval.status,
+            issueId: primaryIssueId,
+            issueIds: linkedIssueIds,
+            wakeReason: "approval_pipeline_tick",
+          },
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, approvalId: approval.id }, "failed to queue PM pipeline tick after approval");
     }
 
     res.json(redactApprovalPayload(approval));
