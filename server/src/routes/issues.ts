@@ -24,7 +24,7 @@ import {
   projectService,
 } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
-import { forbidden, HttpError, unauthorized } from "../errors.js";
+import { forbidden, HttpError, unauthorized, unprocessable } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 import { shouldWakeAssigneeOnComment } from "./issues-comment-wakeup.js";
@@ -37,6 +37,18 @@ const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
   "image/webp",
   "image/gif",
 ]);
+
+function isSyntheticAgentInboxIssue(title: string, description?: string | null) {
+  const normalizedTitle = title.trim().toLowerCase();
+  const normalizedDescription = (description ?? "").toLowerCase();
+  return (
+    normalizedTitle === "[inbox] human decisions & approvals" ||
+    normalizedTitle.startsWith("[guardrail] keep project moving") ||
+    normalizedDescription.includes("reply in source issue, or here using:") ||
+    normalizedDescription.includes("decide <issue_key>") ||
+    normalizedDescription.includes("single-thread inbox for human decisions")
+  );
+}
 
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
@@ -453,6 +465,11 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     const actor = getActorInfo(req);
+    if (actor.actorType === "agent" && isSyntheticAgentInboxIssue(req.body.title, req.body.description)) {
+      throw unprocessable(
+        "Synthetic inbox/guardrail issues are not allowed. Use approvals, comments, and existing issue workflows instead.",
+      );
+    }
     const issue = await svc.create(companyId, {
       ...req.body,
       createdByAgentId: actor.agentId,
